@@ -1,0 +1,6 @@
+{
+  "name": "AMKT Injector",
+  "description": "Custom native Android VPN and SSH/DNSTT/VLESS tunnel client with encrypted .myvpn config import and export (Milestone 1: App Shell + Config System).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

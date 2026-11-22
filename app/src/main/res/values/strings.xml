@@ -1,0 +1,281 @@
+<resources>
+    <string name="app_name">AMKT Injector</string>
+
+    <!-- Bottom Navigation -->
+    <string name="nav_home">ပင်မ</string>
+    <string name="nav_networks">ကွန်ရက်</string>
+    <string name="nav_profiles">ဆာဗာများ</string>
+    <string name="nav_logs">မှတ်တမ်း</string>
+    <string name="nav_about">အကြောင်းအရာ</string>
+
+    <!-- Connection Status -->
+    <string name="status_disconnected">ချိတ်ဆက်မှု မရှိသေးပါ</string>
+    <string name="status_connecting">SSH + VPN ချိတ်ဆက်နေပါသည်...</string>
+    <string name="status_connected">VPN ချိတ်ဆက်ပြီးပါပြီ</string>
+    <string name="status_reconnecting">ပြန်လည်ချိတ်ဆက်နေပါသည်...</string>
+    <string name="status_kill_switch_blocking">Kill Switch — Traffic ပိတ်ဆို့ထားသည်</string>
+    <string name="status_error">ချိတ်ဆက်မှု မအောင်မြင်ပါ</string>
+    <string name="status_ready_m3">အဆင့် ၃ — System-wide VPN + Kill Switch အဆင်သင့်ဖြစ်ပါပြီ</string>
+    <string name="status_ready_m4">အဆင့် ၄ — Payload Injector + SSL/SNI + System-wide VPN အဆင်သင့်ဖြစ်ပါပြီ</string>
+    <string name="status_ready_m5">အဆင့် ၅ — DNSTT / SlowDNS + Payload/SSL + System-wide VPN အဆင်သင့်ဖြစ်ပါပြီ</string>
+    <string name="status_ready_m6">အဆင့် ၆ — VLESS WS + DNSTT + Payload/SSL + System-wide VPN အဆင်သင့်ဖြစ်ပါပြီ</string>
+    <string name="status_ready_m7">အဆင့် ၇ — ကွန်ရက် (Network) + ဆာဗာ (Server) ခွဲခြားစနစ် အဆင်သင့်ဖြစ်ပါပြီ</string>
+    <string name="status_profile_selected">ရွေးချယ်ထားသော Profile</string>
+    <string name="status_no_profile">Profile မရွေးချယ်ရသေးပါ</string>
+    <string name="status_network_selected">ကွန်ရက် (Network)</string>
+    <string name="status_server_selected">ဆာဗာ / အကောင့် (Server)</string>
+    <string name="status_no_network">ကွန်ရက် မရွေးချယ်ရသေးပါ</string>
+    <string name="status_no_server">ဆာဗာ မရွေးချယ်ရသေးပါ</string>
+
+    <!-- Home Actions & Labels -->
+    <string name="action_connect">ချိတ်ဆက်ရန်</string>
+    <string name="action_disconnect">ဖြတ်တောက်ရန်</string>
+    <string name="action_connecting">ချိတ်ဆက်နေသည်</string>
+    <string name="action_reconnect">ပြန်ချိတ်ရန်</string>
+    <string name="action_import_config">Config ထည့်သွင်းရန်</string>
+    <string name="action_export_config">Config ထုတ်ယူရန်</string>
+    <string name="action_edit_profile">ပြင်ဆင်ရန်</string>
+    <string name="action_add_profile">Profile အသစ်ထည့်ရန်</string>
+    <string name="action_add_network">ကွန်ရက်အသစ်</string>
+    <string name="action_add_server">ဆာဗာအသစ်ထည့်ရန်</string>
+    <string name="action_select_profile">Profile ရွေးချယ်ရန်</string>
+    <string name="action_select_network">ကွန်ရက် ရွေးချယ်ရန်</string>
+    <string name="action_select_server">ဆာဗာ ရွေးချယ်ရန်</string>
+    <string name="action_switch">ပြောင်းရန်</string>
+    <string name="action_manage_list">စာရင်း</string>
+    <string name="action_save">သိမ်းဆည်းရန်</string>
+    <string name="action_cancel">ပယ်ဖျက်ရန်</string>
+    <string name="action_delete">ဖျက်ရန်</string>
+    <string name="action_duplicate">မိတ္တူပွားရန်</string>
+    <string name="action_clear_logs">မှတ်တမ်းရှင်းရန်</string>
+    <string name="action_copy_logs">ကူးယူရန်</string>
+
+    <!-- Milestone 3 & 4 VPN Engine Notice & Controls -->
+    <string name="m3_banner_title">Milestone 3 — System-wide VPN + Kill Switch</string>
+    <string name="m3_banner_body">Android VpnService နှင့် hev-socks5-tunnel (MIT/Apache-2.0) ဖြင့် ဖုန်းတစ်ခုလုံး၏ Traffic ကို Local SOCKS5 (127.0.0.1) မှတစ်ဆင့် SSH Tunnel ထဲသို့ ပို့ဆောင်ပေးပါသည်။ SSH ပြတ်တောက်ပါက Kill Switch ဖြင့် Traffic မပေါက်ကြားအောင် ပိတ်ဆို့ပြီး Auto-Reconnect ဖြင့် အလိုအလျောက် ပြန်လည်ချိတ်ဆက်ပေးပါမည်။</string>
+    <string name="m4_banner_title">Milestone 4 — Custom Payload Injector + SSL/SNI</string>
+    <string name="m4_banner_body">Profile တစ်ခုချင်းစီအတွက် Direct, HTTP Payload, WebSocket (HTTP 101) နှင့် SSL/TLS + SNI စနစ်များကို စိတ်ကြိုက်ပြင်ဆင်နိုင်ပြီး System-wide VPN (hev-socks5-tunnel + Kill Switch + Auto-Reconnect) ဖြင့် ချိတ်ဆက်အသုံးပြုနိုင်ပါသည်။</string>
+    <string name="m5_banner_title">Milestone 5 — DNSTT (SlowDNS) + System-wide VPN</string>
+    <string name="m5_banner_body">SSH (Direct / HTTP Payload / WebSocket / SSL+SNI) အပြင် DNSTT / SlowDNS (UDP DNS TXT + KCP + Noise_NK + smux) စနစ်ကိုလည်း System-wide VPN (hev-socks5-tunnel + Kill Switch + Auto-Reconnect) ဖြင့် တိုက်ရိုက် ချိတ်ဆက်အသုံးပြုနိုင်ပါပြီ။</string>
+    <string name="m6_banner_title">Milestone 6 — VLESS WebSocket + Remote Sync + Expiry</string>
+    <string name="m6_banner_body">SSH (Direct / Payload / WebSocket / SSL+SNI), DNSTT (SlowDNS) နှင့် VLESS over WebSocket (vless://) အားလုံးကို System-wide VPN (hev-socks5-tunnel + Kill Switch + Auto-Reconnect) ဖြင့် ချိတ်ဆက်အသုံးပြုနိုင်ပါပြီ။</string>
+    <string name="m7_banner_title">Milestone 7 — ကွန်ရက် (Network) + ဆာဗာ (Server) ခွဲခြားစနစ်</string>
+    <string name="m7_banner_body">Payload / SNI / HTTP Proxy ကို ကွန်ရက် (Network) တွင် တစ်ခါတည်း သိမ်းဆည်းထားပြီး ဆာဗာ / အကောင့်အသစ် ထည့်တိုင်း Payload ပြန်ရိုက်စရာမလိုဘဲ လွယ်ကူစွာ တွဲဖက်ချိတ်ဆက်နိုင်ပါပြီ။</string>
+    <string name="dnstt_slow_warning_title">DNSTT / SlowDNS သတိပြုရန်</string>
+    <string name="dnstt_slow_warning_body">DNSTT သည် DNS မှတစ်ဆင့် ဖြတ်သန်းရသဖြင့် သဘာဝအားဖြင့် နှေးကွေးပါသည်။ Direct သို့မဟုတ် Payload/SSL ပိတ်ဆို့ခံရသော ကွန်ရက်များတွင် အရန်နည်းလမ်းအဖြစ်သာ အသုံးပြုပါ။</string>
+    <string name="vpn_active_label">System-wide VPN အလုပ်လုပ်နေသည်</string>
+    <string name="vpn_protection_title">VPN ကာကွယ်မှု ဆက်တင်</string>
+    <string name="vpn_kill_switch_title">Kill Switch (Traffic ပိတ်ဆို့ကာကွယ်မှု)</string>
+    <string name="vpn_kill_switch_desc">SSH ချိတ်ဆက်မှု ပြတ်တောက်ပါက ပြန်လည်ချိတ်ဆက်ပြီးသည်အထိ ဖုန်း၏ Traffic အားလုံးကို ပိတ်ဆို့ထားမည်</string>
+    <string name="vpn_auto_reconnect_title">Auto-Reconnect (အလိုအလျောက် ပြန်ချိတ်မှု)</string>
+    <string name="vpn_auto_reconnect_desc">ကွန်ရက် သို့မဟုတ် SSH ပြတ်တောက်ပါက အလိုအလျောက် ပြန်လည်ချိတ်ဆက်မည်</string>
+    <string name="vpn_permission_denied">VPN ခွင့်ပြုချက် မပေးထားသဖြင့် ချိတ်ဆက်မှု မစတင်နိုင်ပါ</string>
+    <string name="vpn_duration_label">ချိတ်ဆက်ချိန်</string>
+    <string name="vpn_kill_switch_active_badge">Kill Switch ON</string>
+    <string name="vpn_kill_switch_blocked_msg">SSH ပြတ်တောက်သွားပါသည်။ Traffic မပေါက်ကြားအောင် Kill Switch ဖြင့် ပိတ်ဆို့ထားပါသည်။</string>
+    <string name="vpn_notif_channel_name">AMKT VPN ချိတ်ဆက်မှု</string>
+    <string name="vpn_notif_channel_desc">System-wide VPN ချိတ်ဆက်မှု အခြေအနေနှင့် Traffic ဖော်ပြချက်</string>
+    <string name="dialog_ok">နားလည်ပါပြီ</string>
+
+    <!-- Profile List & Filters -->
+    <string name="profiles_title">ဆာဗာ Profile များ</string>
+    <string name="profiles_subtitle">Profile အားလုံးကို လွတ်လပ်စွာ ပြင်ဆင်၊ ထပ်ထည့်၊ ဖျက်နိုင်ပါသည်</string>
+    <string name="filter_all">အားလုံး</string>
+    <string name="badge_locked">Locked</string>
+    <string name="badge_active">အသုံးပြုနေသည်</string>
+    <string name="badge_account_needed">Account ထည့်ရန်လိုအပ်သည်</string>
+    <string name="label_expiry">သက်တမ်းကုန်ဆုံးရက်</string>
+    <string name="label_no_expiry">သက်တမ်း မသတ်မှတ်ထားပါ</string>
+    <string name="label_expired">သက်တမ်းကုန်ဆုံးပါပြီ</string>
+    <string name="expired_profile_home_warning">ဤ Profile သည် သက်တမ်းကုန်ဆုံးပါပြီ — ချိတ်ဆက်၍ မရပါ။ Profile ပြင်ဆင်ပြီး သက်တမ်းအသစ် ထည့်သွင်းပါ။</string>
+    <string name="empty_profiles_title">Profile မရှိသေးပါ</string>
+    <string name="empty_profiles_body">.myvpn ဖိုင် သို့မဟုတ် vless:// / ss:// .txt ဖိုင် ထည့်သွင်းပါ၊ သို့မဟုတ် အသစ်ဖန်တီးပါ။</string>
+    <string name="networks_title">ကွန်ရက်စာရင်း (Networks)</string>
+    <string name="networks_subtitle">ချိတ်ဆက်အသုံးပြုမည့် ကွန်ရက်ကို ရွေးချယ်ပါ</string>
+    <string name="empty_networks_title">ကွန်ရက် မရှိသေးပါ</string>
+    <string name="empty_networks_body">အပ်ဒိတ် (Update) ခလုတ်နှိပ်၍ ဆွဲယူပါ သို့မဟုတ် .myvpn ဖိုင် ထည့်သွင်းပါ။</string>
+    <string name="servers_title">ဆာဗာစာရင်း (Servers)</string>
+    <string name="servers_subtitle">ချိတ်ဆက်အသုံးပြုမည့် ဆာဗာကို ရွေးချယ်ပါ</string>
+    <string name="empty_servers_title">ဆာဗာ မရှိသေးပါ</string>
+    <string name="empty_servers_body">အပ်ဒိတ် (Update) ခလုတ်နှိပ်၍ ဆာဗာစာရင်း ဆွဲယူပါ သို့မဟုတ် .myvpn ဖိုင် / ကုတ်ထည့်ရန် ဖြင့် ထည့်သွင်းပါ။</string>
+    <string name="expired_server_home_warning">ဤဆာဗာသည် သက်တမ်းကုန်ဆုံးပါပြီ — ချိတ်ဆက်၍ မရပါ။ ကုတ်အသစ်ထည့်သွင်းပါ သို့မဟုတ် ဆာဗာအသစ် ရွေးချယ်ပါ။</string>
+    <string name="network_delete_referenced_title">ကွန်ရက်ကို အသုံးပြုနေသော ဆာဗာများ ရှိနေပါသည်</string>
+    <string name="network_delete_referenced_confirm">ချိတ်ဆက်မှုဖြုတ်၍ ဖျက်မည်</string>
+
+    <!-- Import / Export -->
+    <string name="import_dialog_title">Config ဖိုင် ထည့်သွင်းရန်</string>
+    <string name="import_myvpn_option">.myvpn ဖိုင်ရွေးချယ်ရန် (AES-256)</string>
+    <string name="import_myvpn_desc">Encrypted .myvpn config ဖိုင်ကို ဖွင့်၍ Profile ထည့်မည်</string>
+    <string name="import_txt_option">.txt လင့်ခ်ဖိုင်ရွေးချယ်ရန် (VLESS / SS)</string>
+    <string name="import_txt_desc">တစ်ကြောင်းလျှင် vless:// သို့မဟုတ် ss:// လင့်ခ်တစ်ခုပါသော ဖိုင်</string>
+    <string name="import_paste_option">vless:// သို့မဟုတ် ss:// လင့်ခ် ကူးထည့်ရန်</string>
+    <string name="import_paste_desc">Clipboard မှ တိုက်ရိုက်ကူးထည့်မည်</string>
+    <string name="paste_link_hint">vless://... သို့မဟုတ် ss://... လင့်ခ်ကို ဤနေရာတွင် ထည့်ပါ</string>
+    <string name="export_dialog_title">.myvpn Config ထုတ်ယူရန်</string>
+    <string name="export_lock_label">Config ကို Lock ချ၍ ထုတ်ယူမည် (Locked)</string>
+    <string name="export_lock_desc">ဖွင့်ထားပါက တစ်ဖက်လူ၏ဖုန်းတွင် Password နှင့် Payload ကို ဖုံးကွယ်ထားပါမည်</string>
+    <string name="export_expiry_label">သက်တမ်းကုန်ဆုံးရက် (YYYY-MM-DD)</string>
+    <string name="export_notes_label">မှတ်ချက် (Notes)</string>
+    <string name="export_button_confirm">.myvpn ဖိုင်သိမ်းဆည်းရန်</string>
+    <string name="export_mode_label">ထုတ်ယူမည့် အမျိုးအစား</string>
+    <string name="export_mode_combined">ကွန်ရက် + ဆာဗာ နှစ်ခုလုံး</string>
+    <string name="export_mode_network_only">ကွန်ရက်သီးသန့်</string>
+    <string name="export_mode_server_only">ဆာဗာသီးသန့်</string>
+
+    <!-- Profile Editor -->
+    <string name="editor_title_new">Profile အသစ်ဖန်တီးရန်</string>
+    <string name="editor_title_edit">Profile ပြင်ဆင်ရန်</string>
+    <string name="editor_mode_section">ချိတ်ဆက်မှုစနစ် (Connection Mode)</string>
+    <string name="editor_profile_name">Profile အမည်</string>
+    <string name="editor_ssh_section">SSH ဆာဗာ အချက်အလက်</string>
+    <string name="editor_ssh_host">SSH Host / IP</string>
+    <string name="editor_ssh_port">SSH Port</string>
+    <string name="editor_username">Username (အကောင့်အမည်)</string>
+    <string name="editor_password">Password (စကားဝှက်)</string>
+    <string name="editor_proxy_section">HTTP Proxy (ရွေးချယ်နိုင်သည်)</string>
+    <string name="editor_proxy_host">Proxy Host</string>
+    <string name="editor_proxy_port">Proxy Port</string>
+    <string name="editor_payload_ssl_section">Payload / SSL ဆက်တင်</string>
+    <string name="editor_payload_mode_label">Payload စနစ် (Payload Mode)</string>
+    <string name="editor_payload">Custom Payload Template</string>
+    <string name="editor_payload_placeholder_help">Placeholder များ: [host], [port], [sni], [ua], [crlf], [split] — [split] သည် Payload ကို TCP အပိုင်းခွဲ၍ ပေးပို့ပေးမည်</string>
+    <string name="editor_templates_label">နမူနာ Template များ (နှိပ်မှသာ ထည့်ပေးမည်)</string>
+    <string name="editor_template_connect">CONNECT နမူနာ</string>
+    <string name="editor_template_websocket">WebSocket နမူနာ</string>
+    <string name="editor_template_split_ws">Split + WS နမူနာ</string>
+    <string name="editor_template_blank">ဗလာ (Blank)</string>
+    <string name="editor_clear_payload">Payload ရှင်းရန်</string>
+    <string name="editor_extra_headers_label">အပို Header များ (Extra Headers — တစ်ကြောင်းလျှင် တစ်ခု)</string>
+    <string name="editor_extra_headers_hint">User-Agent: CustomClient/1.0\nX-Online-Host: [sni]</string>
+    <string name="editor_sni_section">SSL / SNI ဆက်တင်</string>
+    <string name="editor_sni">SNI / Bug Host</string>
+    <string name="editor_sni_helper">ဗလာထားပါက Profile ၏ SSH Host ကို SNI အဖြစ် အလိုအလျောက် အသုံးပြုမည်</string>
+    <string name="editor_warn_payload_empty">သတိပေးချက်: ဤ Payload စနစ်အတွက် Payload စာသား မထည့်ရသေးပါ။ နမူနာ Template နှိပ်၍ သို့မဟုတ် ကိုယ်တိုင်ရေးထည့်ပါ။</string>
+    <string name="editor_warn_sni_empty_fallback">မှတ်ချက်: SNI Host ဗလာဖြစ်နေသဖြင့် TLS Handshake တွင် Profile Host ကို အသုံးပြုပါမည်။</string>
+    <string name="editor_warn_sni_ip_literal">သတိပေးချက်: IP လိပ်စာကို SNI Hostname အဖြစ် သုံး၍မရပါ — Domain Fronting အတွက် Domain အမည် ထည့်သွင်းပါ။</string>
+    <string name="editor_dnstt_section">DNSTT / SlowDNS ဆက်တင်</string>
+    <string name="editor_dnstt_ns">DNSTT Nameserver (Tunnel Domain)</string>
+    <string name="editor_dnstt_pubkey">DNSTT Public Key (64-char hex)</string>
+    <string name="editor_dnstt_resolver">Public DNS Resolver (IP:Port)</string>
+    <string name="editor_dnstt_resolver_helper">ဗလာထားပါက 8.8.8.8:53 ကို အလိုအလျောက် အသုံးပြုမည် (ဥပမာ: 8.8.8.8:53 သို့မဟုတ် 1.1.1.1:53)</string>
+    <string name="editor_dnstt_ns_invalid">သတိပေးချက်: Nameserver သည် မှန်ကန်သော Tunnel Domain ဖြစ်ရပါမည် (ဥပမာ: ns.example.com)</string>
+    <string name="editor_dnstt_pubkey_invalid">သတိပေးချက်: Public Key သည် 64 လုံးပါ Hex စာသား (0-9, a-f) ဖြစ်ရပါမည်</string>
+    <string name="editor_dnstt_resolver_invalid">သတိပေးချက်: DNS Resolver ပုံစံ မမှန်ကန်ပါ (ဥပမာ: 8.8.8.8:53)</string>
+    <string name="editor_dnstt_ssh_account_hint">DNSTT သည် Local Forward Port မှတစ်ဆင့် ဆာဗာ၏ SSH သို့ အလိုအလျောက် ချိတ်ဆက်ပေးမည် — SSH Username နှင့် Password ကိုသာ ထည့်သွင်းပါ</string>
+    <string name="editor_vless_section">VLESS + WebSocket ဆက်တင်</string>
+    <string name="editor_vless_link">VLESS Link (vless://...)</string>
+    <string name="editor_meta_section">သက်တမ်း နှင့် မှတ်ချက်</string>
+    <string name="editor_locked_notice">ဤ .myvpn Config သည် Locked ဖြစ်နေသောကြောင့် Password နှင့် Payload ကို ဖုံးကွယ်ထားပါသည်။ အခြားအချက်အလက်အားလုံးကို ပြင်ဆင်နိုင်ပါသည်။</string>
+    <string name="editor_show_all_fields">အခြားဆက်တင်အားလုံး ပြ/ပြင်ရန် (Proxy / Payload / SNI / DNSTT / VLESS)</string>
+    <string name="editor_hide_extra_fields">အပိုဆက်တင်များ ခေါက်သိမ်းရန်</string>
+    <string name="editor_network_title_new">ကွန်ရက်အသစ် ဖန်တီးရန်</string>
+    <string name="editor_network_title_edit">ကွန်ရက် ပြင်ဆင်ရန်</string>
+    <string name="editor_network_name">ကွန်ရက် အမည် (Network Name)</string>
+    <string name="editor_network_locked_notice">ဤကွန်ရက် Config သည် Locked ဖြစ်နေသောကြောင့် မူလ Payload ကို ဖုံးကွယ်ထားပါသည်။ Payload အသစ်ရိုက်ထည့်ပါက အစားထိုးသိမ်းဆည်းပါမည်။</string>
+    <string name="editor_server_title_new">ဆာဗာ / အကောင့်အသစ် ထည့်ရန်</string>
+    <string name="editor_server_title_edit">ဆာဗာ / အကောင့် ပြင်ဆင်ရန်</string>
+    <string name="editor_server_name">ဆာဗာ အမည် (Server Name)</string>
+    <string name="editor_server_vless_uuid">VLESS UUID (လင့်ခ်မထည့်ပါက တိုက်ရိုက်ထည့်နိုင်)</string>
+    <string name="editor_server_region">ဒေသ / နိုင်ငံ (Region — ဥပမာ JP, SG)</string>
+    <string name="editor_server_tags">Tag များ (ဥပမာ VIP, SlowDNS)</string>
+    <string name="editor_server_default_network">ပုံမှန်တွဲဖက်မည့် ကွန်ရက် (ရွေးချယ်နိုင်သည်)</string>
+    <string name="editor_server_no_default_network">သီးသန့်မသတ်မှတ်ပါ (Home တွင် ရွေးထားသော ကွန်ရက်သုံးမည်)</string>
+    <string name="editor_server_locked_notice">ဤဆာဗာ Config သည် Locked ဖြစ်နေသောကြောင့် မူလ Password ကို ဖုံးကွယ်ထားပါသည်။ Password အသစ်ရိုက်ထည့်ပါက အစားထိုးသိမ်းဆည်းပါမည်။</string>
+    <string name="msg_validation_network_name">ကွန်ရက် အမည် ထည့်သွင်းပါ</string>
+    <string name="msg_validation_server_name">ဆာဗာ အမည် ထည့်သွင်းပါ</string>
+
+    <!-- Logs Screen -->
+    <string name="logs_title">လုပ်ဆောင်မှု မှတ်တမ်း</string>
+    <string name="logs_subtitle">Config နှင့် ချိတ်ဆက်မှု အခြေအနေများ</string>
+    <string name="logs_empty">မှတ်တမ်း မရှိသေးပါ</string>
+
+    <!-- About Screen -->
+    <string name="about_title">အက်ပ်အကြောင်း နှင့် လိုင်စင်များ</string>
+    <string name="about_subtitle">ကိုယ်ပိုင်သီးသန့် တည်ဆောက်ထားသော Android Tunnel Client</string>
+    <string name="about_privacy_title">ကိုယ်ရေးလုံခြုံမှု နှင့် မူဝါဒ</string>
+    <string name="about_privacy_body">ကြော်ငြာ (Ads) မပါဝင်ပါ။ Analytics နှင့် Third-party tracking လုံးဝမပါဝင်ပါ။ ဆာဗာစကားဝှက်များကို အက်ပ်အတွင်း Hardcode မလုပ်ထားပါ။</string>
+    <string name="about_crypto_title">Config Encryption အကြောင်း</string>
+    <string name="about_crypto_body">.myvpn ဖိုင်များကို AES-256-GCM ဖြင့် Encrypt လုပ်ထားပြီး Key ကို Native C++ (NDK) နှင့် R8 Obfuscation ဖြင့် ဖုံးအုပ်ထားပါသည်။ (မှတ်ချက် — ကျွမ်းကျင်သူများ Reverse-engineer လုပ်နိုင်သဖြင့် Password ကို အလွယ်တကူ မမြင်ရစေရန်သာ ကာကွယ်ပေးခြင်း ဖြစ်ပါသည်။)</string>
+    <string name="about_roadmap_title">တည်ဆောက်မှု အဆင့်များ (Milestones)</string>
+    <string name="about_servers_title">ပိုင်ရှင်၏ ဆာဗာ အချက်အလက်များ</string>
+    <string name="about_licenses_title">Open-Source Libraries (MIT / Apache-2.0 / BSD)</string>
+
+    <!-- Messages / Snackbars -->
+    <string name="msg_import_success">Config %1$d ခု ထည့်သွင်းပြီးပါပြီ</string>
+    <string name="msg_import_failed">Config ဖတ်မရပါ — %1$s</string>
+    <string name="msg_export_success">.myvpn ဖိုင် ထုတ်ယူသိမ်းဆည်းပြီးပါပြီ</string>
+    <string name="msg_export_failed">ဖိုင်ထုတ်ယူမှု မအောင်မြင်ပါ — %1$s</string>
+    <string name="msg_profile_saved">Profile သိမ်းဆည်းပြီးပါပြီ</string>
+    <string name="msg_profile_deleted">Profile ဖျက်ပြီးပါပြီ</string>
+    <string name="msg_logs_copied">မှတ်တမ်းများကို Clipboard သို့ ကူးယူပြီးပါပြီ</string>
+    <string name="msg_validation_name">Profile အမည် ထည့်သွင်းပါ</string>
+    <string name="msg_validation_host">Host သို့မဟုတ် VLESS Link ထည့်သွင်းပါ</string>
+
+    <!-- Milestone 7: Access Code & Owner Announcement Banner -->
+    <string name="pass_card_title">အဖွဲ့ဝင် / Access Code စနစ်</string>
+    <string name="pass_status_active">Code အတည်ပြုပြီး (Active)</string>
+    <string name="pass_status_inactive">Code မထည့်ရသေးပါ</string>
+    <string name="pass_enter_action">Code ထည့်သွင်းရန်</string>
+    <string name="pass_change_action">Code ပြောင်း/စစ်ရန်</string>
+    <string name="pass_clear_action">Code ဖျက်ရန်</string>
+    <string name="pass_dialog_title">Access Code အတည်ပြုရန်</string>
+    <string name="pass_dialog_desc">ပိုင်ရှင်၏ Telegram Bot မှရရှိသော တစ်ဖုန်းလျှင် တစ်ကုဒ် (2,500 Ks/month) ကို ထည့်သွင်း၍ ဆာဗာတွင် စစ်ဆေးပါ။</string>
+    <string name="pass_code_label">Access Code</string>
+    <string name="pass_device_id_label">ဖုန်း Device ID</string>
+    <string name="pass_verify_button">အတည်ပြုစစ်ဆေးမည်</string>
+    <string name="pass_validating">ဆာဗာတွင် စစ်ဆေးနေပါသည်...</string>
+    <string name="remote_servers_title">ဆာဗာစာရင်း အပ်ဒိတ်</string>
+    <string name="remote_servers_desc">ဆာဗာနှင့် ကွန်ရက်စာရင်း အသစ်များကို အလိုအလျောက် ဆွဲယူအပ်ဒိတ်နိုင်ပါသည်။</string>
+    <string name="remote_servers_replace_label">လက်ရှိ စာရင်းများအစား အသစ်များဖြင့် အစားထိုးမည်</string>
+    <string name="remote_servers_fetch_button">ဆာဗာစာရင်း အပ်ဒိတ်ဆွဲယူမည်</string>
+    <string name="owner_banner_title">ပိုင်ရှင် ကြေညာချက် Banner (Remote JSON)</string>
+    <string name="owner_banner_url_label">Remote Banner JSON URL</string>
+    <string name="owner_banner_url_hint">https://your-domain.example/banner.json</string>
+    <string name="owner_banner_fetch_button">Banner ဆွဲယူမည်</string>
+    <string name="owner_banner_empty">Remote Banner JSON URL ထည့်သွင်းပြီး ဆွဲယူပါက ကြေညာချက်ပုံနှင့် လင့်ခ်ကို ပြသပေးပါမည်။</string>
+    <string name="cd_owner_banner">ပိုင်ရှင် ကြေညာချက်ပုံ</string>
+    <string name="cd_sync_remote">Remote JSON မှ ဆာဗာဆွဲယူရန်</string>
+
+    <!-- Milestone 8: Buyer Redeem Code & Clean Home UI -->
+    <string name="redeem_screen_title">ကုတ်ထည့်ရန်</string>
+    <string name="redeem_button_short">ကုတ်ထည့်ရန်</string>
+    <string name="redeem_card_heading">ဝယ်ယူထားသော ကုတ်ဖြင့် ဆာဗာရယူရန်</string>
+    <string name="redeem_card_subtitle">ဝယ်ယူထားသော ကုတ် (ဥပမာ INJ-XXXX-XXXX) ကို ထည့်သွင်းပြီး အတည်ပြုပါ။ ရရှိသော ဆာဗာကို သင်၏ ဆာဗာစာရင်းထဲသို့ အလိုအလျောက် ထည့်သွင်းပေးပါမည်။</string>
+    <string name="redeem_code_label">ကုတ်နံပါတ် (Redeem Code)</string>
+    <string name="redeem_code_placeholder">INJ-XXXX-XXXX</string>
+    <string name="redeem_one_device_note">ကုတ်တစ်ခုကို ဖုန်းတစ်လုံးတွင်သာ အသုံးပြုနိုင်ပါသည်။ ကွန်ရက် (Network) ကို ပင်မစာမျက်နှာတွင် သီးခြားရွေးချယ်၍ ချိတ်ဆက်ပါ။</string>
+    <string name="redeem_submit_button">ကုတ်အတည်ပြုပြီး ဆာဗာရယူမည်</string>
+    <string name="redeem_submitting_label">ဆာဗာတွင် ကုတ်စစ်ဆေးနေပါသည်...</string>
+    <string name="redeem_success_added_title">ဆာဗာအသစ် ထည့်သွင်းပြီးပါပြီ</string>
+    <string name="redeem_success_updated_title">ဆာဗာအချက်အလက် အပ်ဒိတ်ပြီးပါပြီ</string>
+    <string name="redeem_next_step_hint">ပင်မစာမျက်နှာသို့ ပြန်သွားပြီး မိမိကွန်ရက် (Network) ကို ရွေးချယ်၍ ချိတ်ဆက်နိုင်ပါပြီ။</string>
+    <string name="redeem_return_home_button">ပင်မစာမျက်နှာသို့ ပြန်သွားမည်</string>
+    <string name="redeem_invalid_title">ကုတ် အတည်ပြုမရပါ</string>
+    <string name="redeem_error_title">ချိတ်ဆက်မှု အမှား</string>
+    <string name="redeem_webhook_current_label">လက်ရှိ Redeem Webhook URL</string>
+    <string name="redeem_webhook_title">Redeem Webhook URL (ပြင်ဆင်နိုင်သည်)</string>
+    <string name="redeem_webhook_desc">ဝယ်ယူသူ ကုတ်ထည့်သွင်းရာတွင် ပေးပို့မည့် Webhook URL ကို စိတ်ကြိုက်ပြင်ဆင်နိုင်ပါသည်။</string>
+    <string name="redeem_webhook_url_label">Redeem Webhook URL</string>
+    <string name="redeem_webhook_save_button">Webhook သိမ်းဆည်းမည်</string>
+    <string name="redeem_webhook_reset_button">မူလပြန်ထားမည်</string>
+    <string name="home_remaining_time_label">ကျန်ရှိချိန် / သက်တမ်း</string>
+    <string name="home_search_servers_hint">ဆာဗာ ရှာရန်...</string>
+    <string name="home_search_networks_hint">ကွန်ရက် ရှာရန်...</string>
+    <string name="home_selected_prefix">ရွေးထားသည်</string>
+    <string name="home_ping_checking">စစ်နေသည်...</string>
+    <string name="home_ping_unavailable">— ms</string>
+    <string name="action_update_servers">အပ်ဒိတ်</string>
+    <string name="action_updating_servers">အပ်ဒိတ်နေသည်...</string>
+    <string name="cd_refresh_servers">ဆာဗာစာရင်း အပ်ဒိတ်ရန်</string>
+    <string name="remote_servers_missing_url_guide">Remote Server List JSON URL မထည့်ရသေးပါ — အကြောင်းအရာ (About) တွင် URL ဦးစွာ ထည့်သွင်းပါ</string>
+
+    <!-- Content Descriptions -->
+    <string name="cd_back">နောက်သို့</string>
+    <string name="cd_add">အသစ်ထည့်ရန်</string>
+    <string name="cd_import">Config ထည့်သွင်းရန်</string>
+    <string name="cd_export">Config ထုတ်ယူရန်</string>
+    <string name="cd_locked">Config ကို Lock ချထားသည်</string>
+    <string name="cd_hero_banner">AMKT Injector ကွန်ရက်နောက်ခံပုံ</string>
+    <string name="cd_toggle_password">စကားဝှက် ပြ/ဖျောက်</string>
+    <string name="cd_close">ပိတ်ရန်</string>
+</resources>
