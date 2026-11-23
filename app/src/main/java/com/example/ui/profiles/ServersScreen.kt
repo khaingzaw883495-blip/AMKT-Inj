@@ -13,25 +13,26 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.CloudDownload
-import androidx.compose.material.icons.filled.Dns
-import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Lan
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -39,23 +40,29 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.ServerAccountEntity
+import com.example.data.ServerPingChecker
 
+/**
+ * Locked-down Servers list: shows flag emoji + Server name + read-only expiry line to select,
+ * plus an Update button to fetch the Remote JSON list. No Add, Import, Edit, Export, or Delete.
+ */
 @Composable
 fun ServersScreen(
   servers: List<ServerAccountEntity>,
   selectedServerId: Long?,
   onSelectServer: (ServerAccountEntity) -> Unit,
-  onImportClick: () -> Unit,
   onSyncRemoteClick: () -> Unit,
+  isUpdating: Boolean = false,
   modifier: Modifier = Modifier,
 ) {
   Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
     Column(modifier = Modifier.fillMaxWidth().widthIn(max = 640.dp).fillMaxSize()) {
       Row(
         modifier =
-          Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 16.dp, bottom = 8.dp),
+          Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
       ) {
@@ -71,27 +78,33 @@ fun ServersScreen(
           )
         }
 
-        Row {
-          IconButton(
-            onClick = onSyncRemoteClick,
-            modifier = Modifier.testTag("servers_remote_sync_button"),
-          ) {
+        FilledTonalButton(
+          onClick = onSyncRemoteClick,
+          enabled = !isUpdating,
+          shape = RoundedCornerShape(999.dp),
+          contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+          modifier = Modifier.testTag("servers_remote_sync_button"),
+        ) {
+          if (isUpdating) {
+            CircularProgressIndicator(
+              modifier = Modifier.size(16.dp),
+              strokeWidth = 2.dp,
+              color = MaterialTheme.colorScheme.primary,
+            )
+          } else {
             Icon(
-              imageVector = Icons.Default.CloudDownload,
-              contentDescription = stringResource(R.string.cd_sync_remote),
-              tint = MaterialTheme.colorScheme.secondary,
+              imageVector = Icons.Default.Refresh,
+              contentDescription = stringResource(R.string.cd_refresh_servers),
+              modifier = Modifier.size(17.dp),
             )
           }
-          IconButton(
-            onClick = onImportClick,
-            modifier = Modifier.testTag("servers_import_button"),
-          ) {
-            Icon(
-              imageVector = Icons.Default.FileDownload,
-              contentDescription = stringResource(R.string.cd_import),
-              tint = MaterialTheme.colorScheme.primary,
-            )
-          }
+          Spacer(Modifier.width(6.dp))
+          Text(
+            text =
+              if (isUpdating) stringResource(R.string.action_updating_servers)
+              else stringResource(R.string.action_update_servers),
+            style = MaterialTheme.typography.labelLarge,
+          )
         }
       }
 
@@ -121,10 +134,27 @@ fun ServersScreen(
             )
             Spacer(Modifier.height(4.dp))
             Button(
-              onClick = onImportClick,
-              modifier = Modifier.testTag("empty_import_button"),
+              onClick = onSyncRemoteClick,
+              enabled = !isUpdating,
+              modifier = Modifier.testTag("servers_empty_update_button"),
             ) {
-              Text(stringResource(R.string.action_import_config))
+              if (isUpdating) {
+                CircularProgressIndicator(
+                  modifier = Modifier.size(16.dp),
+                  strokeWidth = 2.dp,
+                  color = MaterialTheme.colorScheme.onPrimary,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.action_updating_servers))
+              } else {
+                Icon(
+                  imageVector = Icons.Default.Refresh,
+                  contentDescription = null,
+                  modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(R.string.action_update_servers))
+              }
             }
           }
         }
@@ -157,6 +187,10 @@ private fun ServerItemCard(
     if (isSelected) MaterialTheme.colorScheme.primary
     else MaterialTheme.colorScheme.outlineVariant
 
+  val flag = remember(server.region, server.name) { ServerPingChecker.resolveServerFlagEmoji(server) }
+  val (expiryLabel, isExpired) =
+    remember(server.expiryDate) { ServerPingChecker.formatRemainingExpiry(server.expiryDate) }
+
   Card(
     shape = RoundedCornerShape(16.dp),
     colors =
@@ -178,26 +212,33 @@ private fun ServerItemCard(
     ) {
       Surface(
         shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.tertiaryContainer,
+        color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.size(40.dp),
       ) {
         Box(contentAlignment = Alignment.Center) {
-          Icon(
-            imageVector = Icons.Default.Dns,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onTertiaryContainer,
-            modifier = Modifier.size(20.dp),
+          Text(text = flag, fontSize = 20.sp)
+        }
+      }
+      Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+          text = server.name,
+          style = MaterialTheme.typography.titleMedium,
+          fontWeight = FontWeight.SemiBold,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        if (server.expiryDate.isNotBlank()) {
+          Text(
+            text = expiryLabel,
+            style = MaterialTheme.typography.labelSmall,
+            color =
+              if (isExpired) MaterialTheme.colorScheme.error
+              else MaterialTheme.colorScheme.primary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
           )
         }
       }
-      Text(
-        text = server.name,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.SemiBold,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.weight(1f),
-      )
       if (isSelected) {
         Icon(
           imageVector = Icons.Default.CheckCircle,

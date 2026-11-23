@@ -20,14 +20,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.FileDownload
-import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -42,44 +41,33 @@ import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.NetworkConfigEntity
 
+/**
+ * Locked-down Networks list: shows only Network name + privacy subtitle to select.
+ * No Add, Import, Edit, Export, or Delete actions exist; networks come exclusively from Update.
+ */
 @Composable
 fun NetworksScreen(
   networks: List<NetworkConfigEntity>,
   selectedNetworkId: Long?,
   onSelectNetwork: (NetworkConfigEntity) -> Unit,
-  onImportClick: () -> Unit,
+  onUpdateClick: () -> Unit = {},
+  isUpdating: Boolean = false,
   modifier: Modifier = Modifier,
 ) {
   Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
     Column(modifier = Modifier.fillMaxWidth().widthIn(max = 640.dp).fillMaxSize()) {
-      Row(
-        modifier =
-          Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 16.dp, bottom = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+      Column(
+        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
       ) {
-        Column(modifier = Modifier.weight(1f)) {
-          Text(
-            text = stringResource(R.string.networks_title),
-            style = MaterialTheme.typography.headlineSmall,
-          )
-          Text(
-            text = stringResource(R.string.networks_subtitle),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-        }
-
-        IconButton(
-          onClick = onImportClick,
-          modifier = Modifier.testTag("networks_import_button"),
-        ) {
-          Icon(
-            imageVector = Icons.Default.FileDownload,
-            contentDescription = stringResource(R.string.cd_import),
-            tint = MaterialTheme.colorScheme.primary,
-          )
-        }
+        Text(
+          text = stringResource(R.string.networks_title),
+          style = MaterialTheme.typography.headlineSmall,
+        )
+        Text(
+          text = stringResource(R.string.networks_subtitle),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
       }
 
       if (networks.isEmpty()) {
@@ -92,7 +80,7 @@ fun NetworksScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
           ) {
             Icon(
-              imageVector = Icons.Default.Hub,
+              imageVector = Icons.Default.Public,
               contentDescription = null,
               tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
               modifier = Modifier.size(52.dp),
@@ -108,10 +96,27 @@ fun NetworksScreen(
             )
             Spacer(Modifier.height(4.dp))
             Button(
-              onClick = onImportClick,
-              modifier = Modifier.testTag("empty_import_network_button"),
+              onClick = onUpdateClick,
+              enabled = !isUpdating,
+              modifier = Modifier.testTag("networks_empty_update_button"),
             ) {
-              Text(stringResource(R.string.action_import_config))
+              if (isUpdating) {
+                CircularProgressIndicator(
+                  modifier = Modifier.size(16.dp),
+                  strokeWidth = 2.dp,
+                  color = MaterialTheme.colorScheme.onPrimary,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.action_updating_servers))
+              } else {
+                Icon(
+                  imageVector = Icons.Default.Refresh,
+                  contentDescription = null,
+                  modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(R.string.action_update_servers))
+              }
             }
           }
         }
@@ -177,14 +182,22 @@ private fun NetworkItemCard(
           )
         }
       }
-      Text(
-        text = network.name,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.SemiBold,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.weight(1f),
-      )
+      Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+          text = network.name,
+          style = MaterialTheme.typography.titleMedium,
+          fontWeight = FontWeight.SemiBold,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+          text = stringResource(R.string.home_network_subtitle),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+      }
       if (isSelected) {
         Icon(
           imageVector = Icons.Default.CheckCircle,

@@ -50,9 +50,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.NetworkConfigEntity
 import com.example.data.ServerAccountEntity
+import com.example.data.ServerPingChecker
 import com.example.ui.RemoteSyncFeedback
 import com.example.ui.theme.DisplayFontFamily
 import com.example.ui.theme.MonoFontFamily
@@ -316,6 +318,9 @@ fun ServerPickerBottomSheet(
                   .clickable { onSelect(srv) }
                   .testTag("server_sheet_item_${srv.id}"),
             ) {
+              val flag = remember(srv.region, srv.name) { ServerPingChecker.resolveServerFlagEmoji(srv) }
+              val (expiryLine, isExpired) =
+                remember(srv.expiryDate) { ServerPingChecker.formatRemainingExpiry(srv.expiryDate) }
               Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -323,26 +328,33 @@ fun ServerPickerBottomSheet(
               ) {
                 Surface(
                   shape = RoundedCornerShape(12.dp),
-                  color = MaterialTheme.colorScheme.tertiaryContainer,
+                  color = MaterialTheme.colorScheme.surfaceVariant,
                   modifier = Modifier.size(40.dp),
                 ) {
                   Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                      imageVector = Icons.Default.Dns,
-                      contentDescription = null,
-                      tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                      modifier = Modifier.size(20.dp),
+                    Text(text = flag, fontSize = 20.sp)
+                  }
+                }
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                  Text(
+                    text = srv.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                  )
+                  if (srv.expiryDate.isNotBlank()) {
+                    Text(
+                      text = expiryLine,
+                      style = MaterialTheme.typography.labelSmall,
+                      color =
+                        if (isExpired) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.primary,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis,
                     )
                   }
                 }
-                Text(
-                  text = srv.name,
-                  style = MaterialTheme.typography.titleSmall,
-                  fontWeight = FontWeight.Bold,
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis,
-                  modifier = Modifier.weight(1f),
-                )
                 if (isSelected) {
                   Icon(
                     imageVector = Icons.Default.Check,
@@ -534,14 +546,22 @@ fun NetworkPickerBottomSheet(
                     )
                   }
                 }
-                Text(
-                  text = net.name,
-                  style = MaterialTheme.typography.titleSmall,
-                  fontWeight = FontWeight.Bold,
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis,
-                  modifier = Modifier.weight(1f),
-                )
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                  Text(
+                    text = net.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                  )
+                  Text(
+                    text = stringResource(R.string.home_network_subtitle),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                  )
+                }
                 if (isSelected) {
                   Icon(
                     imageVector = Icons.Default.Check,

@@ -84,7 +84,7 @@ class AmktApplication : Application() {
 
     logStore.append(
       tag = "BOOT",
-      message = "AMKT Injector (v1.0.0-m8.5 — ကွန်ရက် + ဆာဗာ ခွဲခြားစနစ် • Redeem Code • Server Refresh • SSH/Payload/DNSTT/VLESS + VPN) စတင်ဖွင့်လှစ်ပြီးပါပြီ",
+      message = "AMKT Injector (v1.0.0-m9 — ကွန်ရက် + ဆာဗာ ခွဲခြားစနစ် • Redeem Code • Update • SSH/Payload/DNSTT/VLESS + VPN) စတင်ဖွင့်လှစ်ပြီးပါပြီ",
       level = LogLevel.INFO,
     )
     val cryptoBackend =

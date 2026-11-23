@@ -25,7 +25,6 @@ import androidx.compose.material.icons.filled.ConfirmationNumber
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -39,7 +38,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -65,13 +63,11 @@ import com.example.ui.theme.MonoFontFamily
 @Composable
 fun RedeemCodeScreen(
   deviceId: String,
-  webhookUrl: String,
   isRedeeming: Boolean,
   lastOutcome: RedeemOutcome?,
   onRedeemSubmit: (String) -> Unit,
   onClearOutcome: () -> Unit,
   onNavigateBack: () -> Unit,
-  onOpenWebhookSettings: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
   var codeInput by rememberSaveable { mutableStateOf("") }
@@ -340,51 +336,6 @@ fun RedeemCodeScreen(
                   message = outcome.message,
                 )
               }
-            }
-          }
-        }
-
-        // Editable Webhook URL footnote
-        item {
-          Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            modifier = Modifier.fillMaxWidth(),
-          ) {
-            Column(
-              modifier = Modifier.padding(14.dp),
-              verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-              ) {
-                Text(
-                  text = stringResource(R.string.redeem_webhook_current_label),
-                  style = MaterialTheme.typography.labelMedium,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                TextButton(
-                  onClick = onOpenWebhookSettings,
-                  modifier = Modifier.testTag("redeem_edit_webhook_button"),
-                ) {
-                  Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                  )
-                  Spacer(Modifier.width(4.dp))
-                  Text(stringResource(R.string.action_edit_profile))
-                }
-              }
-              Text(
-                text = webhookUrl,
-                style = MaterialTheme.typography.labelSmall,
-                fontFamily = MonoFontFamily,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
             }
           }
         }

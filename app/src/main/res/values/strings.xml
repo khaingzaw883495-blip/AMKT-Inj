@@ -5,8 +5,7 @@
     <string name="nav_home">ပင်မ</string>
     <string name="nav_networks">ကွန်ရက်</string>
     <string name="nav_profiles">ဆာဗာများ</string>
-    <string name="nav_logs">မှတ်တမ်း</string>
-    <string name="nav_about">အကြောင်းအရာ</string>
+    <string name="nav_update">Update</string>
 
     <!-- Connection Status -->
     <string name="status_disconnected">ချိတ်ဆက်မှု မရှိသေးပါ</string>
@@ -93,11 +92,11 @@
     <string name="networks_title">ကွန်ရက်စာရင်း (Networks)</string>
     <string name="networks_subtitle">ချိတ်ဆက်အသုံးပြုမည့် ကွန်ရက်ကို ရွေးချယ်ပါ</string>
     <string name="empty_networks_title">ကွန်ရက် မရှိသေးပါ</string>
-    <string name="empty_networks_body">အပ်ဒိတ် (Update) ခလုတ်နှိပ်၍ ဆွဲယူပါ သို့မဟုတ် .myvpn ဖိုင် ထည့်သွင်းပါ။</string>
+    <string name="empty_networks_body">Update ခလုတ်နှိပ်၍ ကွန်ရက်စာရင်း ဆွဲယူပါ။</string>
     <string name="servers_title">ဆာဗာစာရင်း (Servers)</string>
     <string name="servers_subtitle">ချိတ်ဆက်အသုံးပြုမည့် ဆာဗာကို ရွေးချယ်ပါ</string>
     <string name="empty_servers_title">ဆာဗာ မရှိသေးပါ</string>
-    <string name="empty_servers_body">အပ်ဒိတ် (Update) ခလုတ်နှိပ်၍ ဆာဗာစာရင်း ဆွဲယူပါ သို့မဟုတ် .myvpn ဖိုင် / ကုတ်ထည့်ရန် ဖြင့် ထည့်သွင်းပါ။</string>
+    <string name="empty_servers_body">Update ခလုတ်နှိပ်၍ ဆာဗာစာရင်း ဆွဲယူပါ သို့မဟုတ် ကုတ်ထည့်ရန် ဖြင့် ရယူပါ။</string>
     <string name="expired_server_home_warning">ဤဆာဗာသည် သက်တမ်းကုန်ဆုံးပါပြီ — ချိတ်ဆက်၍ မရပါ။ ကုတ်အသစ်ထည့်သွင်းပါ သို့မဟုတ် ဆာဗာအသစ် ရွေးချယ်ပါ။</string>
     <string name="network_delete_referenced_title">ကွန်ရက်ကို အသုံးပြုနေသော ဆာဗာများ ရှိနေပါသည်</string>
     <string name="network_delete_referenced_confirm">ချိတ်ဆက်မှုဖြုတ်၍ ဖျက်မည်</string>
@@ -258,24 +257,34 @@
     <string name="redeem_webhook_url_label">Redeem Webhook URL</string>
     <string name="redeem_webhook_save_button">Webhook သိမ်းဆည်းမည်</string>
     <string name="redeem_webhook_reset_button">မူလပြန်ထားမည်</string>
-    <string name="home_remaining_time_label">ကျန်ရှိချိန် / သက်တမ်း</string>
+    <string name="home_network_label">Network</string>
+    <string name="home_network_subtitle">လုံခြုံသော ကွန်ရက်ချိတ်ဆက်မှု</string>
+    <string name="home_server_label">Server</string>
+    <string name="home_remaining_time_label">Remaining time</string>
+    <string name="home_status_disconnected">Disconnected</string>
+    <string name="home_status_connected">Connected</string>
+    <string name="home_status_connecting">Connecting...</string>
+    <string name="home_status_reconnecting">Reconnecting...</string>
+    <string name="home_status_kill_switch">Kill Switch Blocking</string>
+    <string name="home_status_error">Connection Error</string>
+    <string name="home_connect_cta">CONNECT</string>
+    <string name="home_disconnect_cta">DISCONNECT</string>
+    <string name="home_connecting_cta">CONNECTING...</string>
+    <string name="home_duration_prefix">Duration</string>
     <string name="home_search_servers_hint">ဆာဗာ ရှာရန်...</string>
     <string name="home_search_networks_hint">ကွန်ရက် ရှာရန်...</string>
     <string name="home_selected_prefix">ရွေးထားသည်</string>
-    <string name="home_ping_checking">စစ်နေသည်...</string>
-    <string name="home_ping_unavailable">— ms</string>
-    <string name="action_update_servers">အပ်ဒိတ်</string>
-    <string name="action_updating_servers">အပ်ဒိတ်နေသည်...</string>
-    <string name="cd_refresh_servers">ဆာဗာစာရင်း အပ်ဒိတ်ရန်</string>
-    <string name="remote_servers_missing_url_guide">Remote Server List JSON URL မထည့်ရသေးပါ — အကြောင်းအရာ (About) တွင် URL ဦးစွာ ထည့်သွင်းပါ</string>
+    <string name="action_update_servers">Update</string>
+    <string name="action_updating_servers">Updating...</string>
+    <string name="cd_refresh_servers">Update</string>
+    <string name="settings_title">ဆက်တင် (Settings)</string>
+    <string name="settings_appearance_title">အသွင်အပြင်</string>
+    <string name="settings_dark_mode_title">Dark Mode</string>
+    <string name="settings_dark_mode_desc">အမှောင်အရောင်စနစ်ဖြင့် အသုံးပြုမည်</string>
+    <string name="settings_redeem_desc">ဝယ်ယူထားသော ကုတ်ဖြင့် ဆာဗာရယူရန်</string>
+    <string name="cd_settings">ဆက်တင်</string>
 
     <!-- Content Descriptions -->
     <string name="cd_back">နောက်သို့</string>
-    <string name="cd_add">အသစ်ထည့်ရန်</string>
-    <string name="cd_import">Config ထည့်သွင်းရန်</string>
-    <string name="cd_export">Config ထုတ်ယူရန်</string>
-    <string name="cd_locked">Config ကို Lock ချထားသည်</string>
-    <string name="cd_hero_banner">AMKT Injector ကွန်ရက်နောက်ခံပုံ</string>
-    <string name="cd_toggle_password">စကားဝှက် ပြ/ဖျောက်</string>
     <string name="cd_close">ပိတ်ရန်</string>
 </resources>

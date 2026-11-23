@@ -26,21 +26,13 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.ConfirmationNumber
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.FileDownload
-import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Public
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapVert
-import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.WarningAmber
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -49,9 +41,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -77,21 +67,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.BuildConfig
 import com.example.R
-import com.example.data.LogEntry
-import com.example.data.LogLevel
 import com.example.data.NetworkConfigEntity
 import com.example.data.ServerAccountEntity
 import com.example.data.ServerPingChecker
 import com.example.membership.OwnerBanner
-import com.example.membership.PassStatus
 import com.example.ui.RemoteSyncFeedback
 import com.example.ui.theme.DisplayFontFamily
 import com.example.ui.theme.MonoFontFamily
 import com.example.vpn.AmktVpnService
-import com.example.vpn.VpnProtectionSettings
 import com.example.vpn.VpnTrafficStats
 import com.example.vpn.VpnTunnelState
 import kotlinx.coroutines.delay
@@ -102,38 +89,26 @@ fun HomeScreen(
   servers: List<ServerAccountEntity>,
   selectedNetwork: NetworkConfigEntity?,
   selectedServer: ServerAccountEntity?,
-  recentLogs: List<LogEntry>,
   vpnState: VpnTunnelState,
   trafficStats: VpnTrafficStats,
-  vpnSettings: VpnProtectionSettings,
-  passStatus: PassStatus,
-  ownerBanner: OwnerBanner?,
-  isValidatingCode: Boolean,
-  isDarkTheme: Boolean,
-  onToggleTheme: () -> Unit,
+  ownerBanner: OwnerBanner? = null,
   onConnectClick: () -> Unit,
   onReconnectClick: () -> Unit,
-  onToggleKillSwitch: (Boolean) -> Unit,
-  onToggleAutoReconnect: (Boolean) -> Unit,
   onSelectNetwork: (NetworkConfigEntity) -> Unit,
   onSelectServer: (ServerAccountEntity) -> Unit,
-  onImportClick: () -> Unit,
   onOpenNetworksClick: () -> Unit,
   onOpenServersClick: () -> Unit,
-  onOpenLogsClick: () -> Unit,
+  onOpenSettingsClick: () -> Unit = {},
   onOpenRedeemClick: () -> Unit = {},
   isFetchingRemoteServers: Boolean = false,
   remoteSyncFeedback: RemoteSyncFeedback? = null,
-  onRefreshServersClick: (onMissingUrl: () -> Unit) -> Unit = {},
+  onRefreshServersClick: () -> Unit = {},
   onDismissRemoteSyncFeedback: () -> Unit = {},
-  onValidateCode: (String) -> Unit,
-  onClearCode: () -> Unit,
-  onOpenBannerLink: (String) -> Unit,
+  onOpenBannerLink: (String) -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
   var showNetworkSheet by remember { mutableStateOf(false) }
   var showServerSheet by remember { mutableStateOf(false) }
-  var showPassDialog by remember { mutableStateOf(false) }
 
   if (showNetworkSheet) {
     NetworkPickerBottomSheet(
@@ -176,29 +151,12 @@ fun HomeScreen(
       },
       isFetchingRemoteServers = isFetchingRemoteServers,
       remoteSyncFeedback = remoteSyncFeedback,
-      onRefreshServers = {
-        onRefreshServersClick {
-          showServerSheet = false
-        }
-      },
+      onRefreshServers = onRefreshServersClick,
       onDismissSyncFeedback = onDismissRemoteSyncFeedback,
     )
   }
 
-  if (showPassDialog) {
-    HomeAccessCodeDialog(
-      passStatus = passStatus,
-      isValidating = isValidatingCode,
-      onDismiss = { if (!isValidatingCode) showPassDialog = false },
-      onSubmitCode = onValidateCode,
-      onClearCode = {
-        onClearCode()
-        showPassDialog = false
-      },
-    )
-  }
-
-  // Live ticking duration when VPN is connected
+  // Live ticking VPN session duration
   var elapsedSeconds by remember(vpnState) { mutableLongStateOf(0L) }
   LaunchedEffect(vpnState) {
     val connectedSince = (vpnState as? VpnTunnelState.Connected)?.connectedAtMs
@@ -212,41 +170,47 @@ fun HomeScreen(
     }
   }
 
+  // Live 1-second clock for the selected server's HH:MM:SS remaining-time countdown
+  var nowEpochMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+  LaunchedEffect(selectedServer?.expiryDate) {
+    if (!selectedServer?.expiryDate.isNullOrBlank()) {
+      while (true) {
+        nowEpochMs = System.currentTimeMillis()
+        delay(1_000L)
+      }
+    }
+  }
+
   Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
     LazyColumn(
       modifier = Modifier.fillMaxWidth().widthIn(max = 600.dp),
       contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-      // 1. Minimal airy top header bar (AMKT branding left + version pill & theme toggle right)
+      // 1. Top Header Bar: AMKT Injector branding left + version pill & Settings gear right
       item {
-        HomeTopHeaderBar(
-          isDarkTheme = isDarkTheme,
-          onToggleTheme = onToggleTheme,
-        )
+        HomeTopHeaderBar(onOpenSettingsClick = onOpenSettingsClick)
       }
 
-      // 2. Centered circular AMKT emblem with live connection status ring
+      // 2. Centered circular AMKT emblem with dashed status halo
       item {
         AmktCenterEmblemRing(vpnState = vpnState)
       }
 
-      // 3. Unified clean main connection card (Network row, Server row, Expiry + Redeem row, Connect CTA)
+      // 3. Main stacked connection card: Network row, Server row, Remaining time row, Status + BIG CONNECT button
       item {
         UnifiedConnectionCard(
           selectedNetwork = selectedNetwork,
           selectedServer = selectedServer,
           vpnState = vpnState,
-          isFetchingRemoteServers = isFetchingRemoteServers,
+          nowEpochMs = nowEpochMs,
           onOpenNetworkPicker = { showNetworkSheet = true },
           onOpenServerPicker = { showServerSheet = true },
-          onRefreshServers = { onRefreshServersClick {} },
-          onOpenRedeem = onOpenRedeemClick,
           onConnectClick = onConnectClick,
         )
       }
 
-      // 4. Compact horizontal status pills (Duration + Data RX/TX) directly beneath the main card
+      // 4. Read-only Duration & Data Used pills directly beneath the main card
       item {
         CompactStatsPillsRow(
           elapsedSeconds = elapsedSeconds,
@@ -254,7 +218,34 @@ fun HomeScreen(
         )
       }
 
-      // 5. Contextual alerts (only shown when active / needed)
+      // 5. Single small "ကုတ်ထည့်ရန်" (Enter Code) button below the pills
+      item {
+        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+          OutlinedButton(
+            onClick = onOpenRedeemClick,
+            shape = RoundedCornerShape(999.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f)),
+            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
+            modifier = Modifier.testTag("home_redeem_button"),
+          ) {
+            Icon(
+              imageVector = Icons.Default.ConfirmationNumber,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.secondary,
+              modifier = Modifier.size(17.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+              text = stringResource(R.string.redeem_button_short),
+              style = MaterialTheme.typography.labelLarge,
+              fontWeight = FontWeight.SemiBold,
+              color = MaterialTheme.colorScheme.secondary,
+            )
+          }
+        }
+      }
+
+      // 6. Contextual alerts (only shown when active / needed)
       if (selectedServer?.isExpired() == true) {
         item {
           CompactAlertCard(
@@ -299,7 +290,7 @@ fun HomeScreen(
         }
       }
 
-      // 6. Owner Announcement Banner (only when configured)
+      // 7. Owner Announcement Banner (only when configured)
       if (ownerBanner != null) {
         item {
           OwnerBannerCard(
@@ -310,39 +301,13 @@ fun HomeScreen(
           )
         }
       }
-
-      // 7. Compact Quick Actions strip (.myvpn File Import / Access Code)
-      item {
-        QuickUtilityRow(
-          onImportClick = onImportClick,
-          onPassCodeClick = { showPassDialog = true },
-        )
-      }
-
-      // 8. VPN Protection toggles (Kill Switch + Auto-Reconnect)
-      item {
-        VpnProtectionCompactCard(
-          settings = vpnSettings,
-          onToggleKillSwitch = onToggleKillSwitch,
-          onToggleAutoReconnect = onToggleAutoReconnect,
-        )
-      }
-
-      // 9. Compact Recent Logs preview
-      item {
-        RecentLogsPreviewCard(
-          recentLogs = recentLogs.takeLast(4).reversed(),
-          onOpenLogs = onOpenLogsClick,
-        )
-      }
     }
   }
 }
 
 @Composable
 private fun HomeTopHeaderBar(
-  isDarkTheme: Boolean,
-  onToggleTheme: () -> Unit,
+  onOpenSettingsClick: () -> Unit,
 ) {
   Row(
     modifier = Modifier.fillMaxWidth(),
@@ -352,16 +317,28 @@ private fun HomeTopHeaderBar(
     Text(
       text =
         buildAnnotatedString {
-          withStyle(SpanStyle(fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onBackground)) {
+          withStyle(
+            SpanStyle(
+              fontWeight = FontWeight.ExtraBold,
+              color = MaterialTheme.colorScheme.onBackground,
+            )
+          ) {
             append("AMKT ")
           }
-          withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)) {
+          withStyle(
+            SpanStyle(
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.primary,
+            )
+          ) {
             append("Injector")
           }
         },
       style = MaterialTheme.typography.titleLarge,
       fontFamily = DisplayFontFamily,
+      modifier = Modifier.testTag("home_brand_title"),
     )
+
     Row(
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -380,12 +357,12 @@ private fun HomeTopHeaderBar(
         )
       }
       IconButton(
-        onClick = onToggleTheme,
-        modifier = Modifier.size(40.dp).testTag("theme_toggle_button"),
+        onClick = onOpenSettingsClick,
+        modifier = Modifier.size(48.dp).testTag("home_settings_button"),
       ) {
         Icon(
-          imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
-          contentDescription = "Theme",
+          imageVector = Icons.Default.Settings,
+          contentDescription = stringResource(R.string.cd_settings),
           tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
       }
@@ -410,18 +387,26 @@ private fun AmktCenterEmblemRing(vpnState: VpnTunnelState) {
     contentAlignment = Alignment.Center,
   ) {
     Box(
-      modifier = Modifier.size(132.dp),
+      modifier = Modifier.size(136.dp),
       contentAlignment = Alignment.Center,
     ) {
       Canvas(modifier = Modifier.fillMaxSize()) {
-        val outerStroke = Stroke(width = 2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 10f)))
-        drawCircle(color = ringColor.copy(alpha = 0.45f), radius = size.minDimension / 2f - 2.dp.toPx(), style = outerStroke)
+        val outerStroke =
+          Stroke(
+            width = 2.dp.toPx(),
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 10f)),
+          )
+        drawCircle(
+          color = ringColor.copy(alpha = 0.5f),
+          radius = size.minDimension / 2f - 2.dp.toPx(),
+          style = outerStroke,
+        )
         drawCircle(
           color = ringColor.copy(alpha = 0.14f),
           radius = size.minDimension / 2f - 10.dp.toPx(),
         )
         drawCircle(
-          color = ringColor.copy(alpha = 0.75f),
+          color = ringColor.copy(alpha = 0.78f),
           radius = size.minDimension / 2f - 10.dp.toPx(),
           style = Stroke(width = 2.dp.toPx()),
         )
@@ -430,7 +415,7 @@ private fun AmktCenterEmblemRing(vpnState: VpnTunnelState) {
         painter = painterResource(id = R.drawable.app_icon_amkt_1795171749485),
         contentDescription = stringResource(R.string.app_name),
         contentScale = ContentScale.Crop,
-        modifier = Modifier.size(88.dp).clip(CircleShape),
+        modifier = Modifier.size(92.dp).clip(CircleShape),
       )
     }
   }
@@ -441,11 +426,9 @@ private fun UnifiedConnectionCard(
   selectedNetwork: NetworkConfigEntity?,
   selectedServer: ServerAccountEntity?,
   vpnState: VpnTunnelState,
-  isFetchingRemoteServers: Boolean,
+  nowEpochMs: Long,
   onOpenNetworkPicker: () -> Unit,
   onOpenServerPicker: () -> Unit,
-  onRefreshServers: () -> Unit,
-  onOpenRedeem: () -> Unit,
   onConnectClick: () -> Unit,
 ) {
   val isConnecting = vpnState is VpnTunnelState.Connecting || vpnState is VpnTunnelState.Reconnecting
@@ -467,28 +450,39 @@ private fun UnifiedConnectionCard(
 
   val statusLabel =
     when (vpnState) {
-      is VpnTunnelState.Connected -> stringResource(R.string.status_connected)
-      is VpnTunnelState.Connecting -> stringResource(R.string.status_connecting)
-      is VpnTunnelState.Reconnecting -> stringResource(R.string.status_reconnecting)
-      is VpnTunnelState.KillSwitchBlocking -> stringResource(R.string.status_kill_switch_blocking)
-      is VpnTunnelState.Error -> stringResource(R.string.status_error)
-      is VpnTunnelState.Disconnected -> stringResource(R.string.status_disconnected)
+      is VpnTunnelState.Connected -> stringResource(R.string.home_status_connected)
+      is VpnTunnelState.Connecting -> stringResource(R.string.home_status_connecting)
+      is VpnTunnelState.Reconnecting -> stringResource(R.string.home_status_reconnecting)
+      is VpnTunnelState.KillSwitchBlocking -> stringResource(R.string.home_status_kill_switch)
+      is VpnTunnelState.Error -> stringResource(R.string.home_status_error)
+      is VpnTunnelState.Disconnected -> stringResource(R.string.home_status_disconnected)
     }
 
-  val (expiryText, isServerExpired) =
+  val serverFlag =
+    remember(selectedServer?.region, selectedServer?.name) {
+      ServerPingChecker.resolveServerFlagEmoji(selectedServer)
+    }
+  val (serverExpirySubtitle, isServerExpired) =
     remember(selectedServer?.expiryDate) {
       ServerPingChecker.formatRemainingExpiry(selectedServer?.expiryDate.orEmpty())
+    }
+  val (countdownHms, isCountdownExpired) =
+    remember(selectedServer?.expiryDate, nowEpochMs) {
+      ServerPingChecker.formatExpiryCountdownHms(
+        expiryDate = selectedServer?.expiryDate.orEmpty(),
+        nowMs = nowEpochMs,
+      )
     }
 
   Card(
     shape = RoundedCornerShape(24.dp),
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
     modifier = Modifier.fillMaxWidth(),
   ) {
     Column(modifier = Modifier.fillMaxWidth()) {
-      // Row 1: Network selector
+      // Row 1: Network selector (Globe icon + "Network" + selected name + short subtitle)
       Row(
         modifier =
           Modifier
@@ -515,7 +509,7 @@ private fun UnifiedConnectionCard(
         }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
           Text(
-            text = stringResource(R.string.status_network_selected),
+            text = stringResource(R.string.home_network_label),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
@@ -523,6 +517,13 @@ private fun UnifiedConnectionCard(
             text = selectedNetwork?.name ?: stringResource(R.string.status_no_network),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+          Text(
+            text = stringResource(R.string.home_network_subtitle),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
           )
@@ -536,7 +537,7 @@ private fun UnifiedConnectionCard(
 
       HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-      // Row 2: Server selector (NAME ONLY + Refresh/Update action)
+      // Row 2: Server selector (Country flag + "Server" + selected name + expiry/remaining line)
       Row(
         modifier =
           Modifier
@@ -549,21 +550,16 @@ private fun UnifiedConnectionCard(
       ) {
         Surface(
           shape = RoundedCornerShape(12.dp),
-          color = MaterialTheme.colorScheme.tertiaryContainer,
-          modifier = Modifier.size(44.dp),
+          color = MaterialTheme.colorScheme.surfaceVariant,
+          modifier = Modifier.size(44.dp).testTag("home_server_flag"),
         ) {
           Box(contentAlignment = Alignment.Center) {
-            Icon(
-              imageVector = Icons.Default.Dns,
-              contentDescription = null,
-              tint = MaterialTheme.colorScheme.onTertiaryContainer,
-              modifier = Modifier.size(22.dp),
-            )
+            Text(text = serverFlag, fontSize = 22.sp)
           }
         }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
           Text(
-            text = stringResource(R.string.status_server_selected),
+            text = stringResource(R.string.home_server_label),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
@@ -574,45 +570,35 @@ private fun UnifiedConnectionCard(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
           )
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-          IconButton(
-            onClick = onRefreshServers,
-            enabled = !isFetchingRemoteServers,
-            modifier = Modifier.testTag("home_refresh_servers_button"),
-          ) {
-            if (isFetchingRemoteServers) {
-              CircularProgressIndicator(
-                modifier = Modifier.size(18.dp),
-                strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.primary,
-              )
-            } else {
-              Icon(
-                imageVector = Icons.Default.Refresh,
-                contentDescription = stringResource(R.string.cd_refresh_servers),
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp),
-              )
-            }
+          if (selectedServer != null) {
+            Text(
+              text = serverExpirySubtitle,
+              style = MaterialTheme.typography.bodySmall,
+              color =
+                if (isServerExpired) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.primary,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+              modifier = Modifier.testTag("home_server_expiry_line"),
+            )
           }
-          Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
         }
+        Icon(
+          imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
       }
 
       HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-      // Row 3: Remaining Time / Expiry + Redeem Code ("ကုတ်ထည့်ရန်") pill button
+      // Row 3: Remaining time row (Clock icon + "Remaining time" + HH:MM:SS countdown, read-only, NO AddTime button)
       Row(
         modifier =
           Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 14.dp)
-            .testTag("home_redeem_row"),
+            .testTag("home_remaining_time_row"),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
       ) {
@@ -637,36 +623,23 @@ private fun UnifiedConnectionCard(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
           Text(
-            text = expiryText,
-            style = MaterialTheme.typography.titleSmall,
+            text = countdownHms,
+            style = MaterialTheme.typography.titleLarge,
+            fontFamily = MonoFontFamily,
             fontWeight = FontWeight.Bold,
             color =
-              if (isServerExpired) MaterialTheme.colorScheme.error
+              if (isCountdownExpired || isServerExpired) MaterialTheme.colorScheme.error
               else MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.testTag("home_remaining_time_value"),
           )
         }
-        OutlinedButton(
-          onClick = onOpenRedeem,
-          shape = RoundedCornerShape(12.dp),
-          border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.secondary),
-          contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-          modifier = Modifier.testTag("home_redeem_button"),
-        ) {
-          Text(
-            text = stringResource(R.string.redeem_button_short),
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.secondary,
-          )
-        }
       }
 
       HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-      // Row 4: Live status line + Full-width prominent Connect / Disconnect pill button
+      // Row 4: Status line + BIG full-width gradient CONNECT / DISCONNECT button
       Column(
         modifier = Modifier.fillMaxWidth().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -674,6 +647,7 @@ private fun UnifiedConnectionCard(
         Row(
           verticalAlignment = Alignment.CenterVertically,
           horizontalArrangement = Arrangement.spacedBy(8.dp),
+          modifier = Modifier.testTag("home_status_line"),
         ) {
           Box(
             modifier = Modifier.size(10.dp).clip(CircleShape).background(statusDotColor)
@@ -692,14 +666,15 @@ private fun UnifiedConnectionCard(
             Brush.horizontalGradient(
               listOf(
                 MaterialTheme.colorScheme.error,
-                MaterialTheme.colorScheme.error.copy(alpha = 0.85f),
+                MaterialTheme.colorScheme.error.copy(alpha = 0.82f),
               )
             )
           } else {
             Brush.horizontalGradient(
               listOf(
-                MaterialTheme.colorScheme.primary,
                 MaterialTheme.colorScheme.tertiary,
+                MaterialTheme.colorScheme.primary,
+                MaterialTheme.colorScheme.secondary,
               )
             )
           }
@@ -711,7 +686,7 @@ private fun UnifiedConnectionCard(
           modifier =
             Modifier
               .fillMaxWidth()
-              .height(54.dp)
+              .height(56.dp)
               .clip(RoundedCornerShape(16.dp))
               .background(buttonBrush)
               .clickable(onClick = onConnectClick)
@@ -732,13 +707,14 @@ private fun UnifiedConnectionCard(
             Text(
               text =
                 when {
-                  isConnecting -> stringResource(R.string.action_connecting)
-                  isActive -> stringResource(R.string.action_disconnect)
-                  else -> stringResource(R.string.action_connect)
+                  isConnecting -> stringResource(R.string.home_connecting_cta)
+                  isActive -> stringResource(R.string.home_disconnect_cta)
+                  else -> stringResource(R.string.home_connect_cta)
                 },
               style = MaterialTheme.typography.titleMedium,
               fontFamily = DisplayFontFamily,
-              fontWeight = FontWeight.Bold,
+              fontWeight = FontWeight.ExtraBold,
+              letterSpacing = 1.2.sp,
               color = buttonContentColor,
             )
           }
@@ -776,7 +752,7 @@ private fun CompactStatsPillsRow(
           modifier = Modifier.size(15.dp),
         )
         Text(
-          text = "${stringResource(R.string.vpn_duration_label)} ${formatHms(elapsedSeconds)}",
+          text = "${stringResource(R.string.home_duration_prefix)} ${formatHms(elapsedSeconds)}",
           style = MaterialTheme.typography.labelSmall,
           fontFamily = MonoFontFamily,
           color = MaterialTheme.colorScheme.onSurface,
@@ -860,142 +836,6 @@ private fun CompactAlertCard(
 }
 
 @Composable
-private fun QuickUtilityRow(
-  onImportClick: () -> Unit,
-  onPassCodeClick: () -> Unit,
-) {
-  Row(
-    modifier = Modifier.fillMaxWidth(),
-    horizontalArrangement = Arrangement.spacedBy(8.dp),
-  ) {
-    UtilityActionChip(
-      icon = Icons.Default.FileDownload,
-      label = "Import .myvpn",
-      onClick = onImportClick,
-      modifier = Modifier.weight(1f).testTag("quick_import_button"),
-    )
-    UtilityActionChip(
-      icon = Icons.Default.Key,
-      label = "Pass",
-      onClick = onPassCodeClick,
-      modifier = Modifier.weight(1f).testTag("quick_pass_button"),
-    )
-  }
-}
-
-@Composable
-private fun UtilityActionChip(
-  icon: androidx.compose.ui.graphics.vector.ImageVector,
-  label: String,
-  onClick: () -> Unit,
-  modifier: Modifier = Modifier,
-  enabled: Boolean = true,
-) {
-  Surface(
-    shape = RoundedCornerShape(14.dp),
-    color = MaterialTheme.colorScheme.surface,
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    modifier = modifier.clickable(enabled = enabled, onClick = onClick),
-  ) {
-    Column(
-      modifier = Modifier.padding(vertical = 10.dp, horizontal = 6.dp),
-      horizontalAlignment = Alignment.CenterHorizontally,
-      verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-      Icon(
-        imageVector = icon,
-        contentDescription = label,
-        tint =
-          if (enabled) MaterialTheme.colorScheme.primary
-          else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-        modifier = Modifier.size(20.dp),
-      )
-      Text(
-        text = label,
-        style = MaterialTheme.typography.labelSmall,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        color =
-          if (enabled) MaterialTheme.colorScheme.onSurface
-          else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-      )
-    }
-  }
-}
-
-@Composable
-private fun VpnProtectionCompactCard(
-  settings: VpnProtectionSettings,
-  onToggleKillSwitch: (Boolean) -> Unit,
-  onToggleAutoReconnect: (Boolean) -> Unit,
-) {
-  Card(
-    shape = RoundedCornerShape(18.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    modifier = Modifier.fillMaxWidth(),
-  ) {
-    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-      Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-      ) {
-        Icon(
-          imageVector = Icons.Default.Security,
-          contentDescription = null,
-          tint = MaterialTheme.colorScheme.primary,
-          modifier = Modifier.size(18.dp),
-        )
-        Text(
-          text = stringResource(R.string.vpn_protection_title),
-          style = MaterialTheme.typography.titleSmall,
-          fontWeight = FontWeight.Bold,
-        )
-      }
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-      ) {
-        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-          Text(text = stringResource(R.string.vpn_kill_switch_title), style = MaterialTheme.typography.bodyMedium)
-          Text(
-            text = stringResource(R.string.vpn_kill_switch_desc),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-        }
-        Switch(
-          checked = settings.killSwitchEnabled,
-          onCheckedChange = onToggleKillSwitch,
-          modifier = Modifier.testTag("kill_switch_toggle"),
-        )
-      }
-      HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-      ) {
-        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-          Text(text = stringResource(R.string.vpn_auto_reconnect_title), style = MaterialTheme.typography.bodyMedium)
-          Text(
-            text = stringResource(R.string.vpn_auto_reconnect_desc),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-        }
-        Switch(
-          checked = settings.autoReconnectEnabled,
-          onCheckedChange = onToggleAutoReconnect,
-          modifier = Modifier.testTag("auto_reconnect_toggle"),
-        )
-      }
-    }
-  }
-}
-
-@Composable
 private fun OwnerBannerCard(
   banner: OwnerBanner,
   onOpenLink: () -> Unit,
@@ -1041,130 +881,6 @@ private fun OwnerBannerCard(
       }
     }
   }
-}
-
-@Composable
-private fun RecentLogsPreviewCard(
-  recentLogs: List<LogEntry>,
-  onOpenLogs: () -> Unit,
-) {
-  Card(
-    shape = RoundedCornerShape(18.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    modifier = Modifier.fillMaxWidth(),
-  ) {
-    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-      ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          Icon(
-            imageVector = Icons.Default.Terminal,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(18.dp),
-          )
-          Text(
-            text = stringResource(R.string.logs_title),
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-          )
-        }
-        TextButton(
-          onClick = onOpenLogs,
-          contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-          modifier = Modifier.testTag("home_open_logs_button"),
-        ) {
-          Text(stringResource(R.string.nav_logs))
-        }
-      }
-      if (recentLogs.isEmpty()) {
-        Text(
-          text = stringResource(R.string.logs_empty),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-      } else {
-        recentLogs.forEach { entry ->
-          val levelColor =
-            when (entry.level) {
-              LogLevel.SUCCESS -> MaterialTheme.colorScheme.primary
-              LogLevel.WARNING -> MaterialTheme.colorScheme.secondary
-              LogLevel.ERROR -> MaterialTheme.colorScheme.error
-              LogLevel.INFO -> MaterialTheme.colorScheme.onSurfaceVariant
-            }
-          Text(
-            text = "[${entry.tag}] ${entry.message}",
-            style = MaterialTheme.typography.labelSmall,
-            fontFamily = MonoFontFamily,
-            color = levelColor,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-          )
-        }
-      }
-    }
-  }
-}
-
-@Composable
-private fun HomeAccessCodeDialog(
-  passStatus: PassStatus,
-  isValidating: Boolean,
-  onDismiss: () -> Unit,
-  onSubmitCode: (String) -> Unit,
-  onClearCode: () -> Unit,
-) {
-  var codeInput by remember(passStatus.code) { mutableStateOf(passStatus.code) }
-  AlertDialog(
-    onDismissRequest = onDismiss,
-    title = { Text(stringResource(R.string.pass_dialog_title)) },
-    text = {
-      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(text = stringResource(R.string.pass_dialog_desc), style = MaterialTheme.typography.bodySmall)
-        OutlinedTextField(
-          value = codeInput,
-          onValueChange = { codeInput = it },
-          enabled = !isValidating,
-          singleLine = true,
-          label = { Text(stringResource(R.string.pass_code_label)) },
-          modifier = Modifier.fillMaxWidth().testTag("access_code_input"),
-        )
-        Text(
-          text = "${stringResource(R.string.pass_device_id_label)}: ${passStatus.deviceId}",
-          style = MaterialTheme.typography.labelSmall,
-          fontFamily = MonoFontFamily,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-      }
-    },
-    confirmButton = {
-      Button(
-        onClick = { onSubmitCode(codeInput) },
-        enabled = !isValidating && codeInput.isNotBlank(),
-      ) {
-        Text(
-          if (isValidating) stringResource(R.string.pass_validating)
-          else stringResource(R.string.pass_verify_button)
-        )
-      }
-    },
-    dismissButton = {
-      Row {
-        if (passStatus.code.isNotBlank()) {
-          TextButton(onClick = onClearCode, enabled = !isValidating) {
-            Text(stringResource(R.string.pass_clear_action))
-          }
-        }
-        TextButton(onClick = onDismiss, enabled = !isValidating) {
-          Text(stringResource(R.string.action_cancel))
-        }
-      }
-    },
-  )
 }
 
 private fun formatHms(totalSeconds: Long): String {

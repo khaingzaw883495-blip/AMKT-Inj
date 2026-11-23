@@ -2,16 +2,12 @@ package com.example
 
 import android.Manifest
 import android.app.Activity
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
-import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -24,12 +20,13 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Hub
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -58,24 +55,21 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.example.config.MyVpnCrypto
 import com.example.data.NetworkConfigEntity
 import com.example.data.ServerAccountEntity
 import com.example.data.ServerProfileEntity
 import com.example.ui.AmktViewModel
-import com.example.ui.about.AboutScreen
 import com.example.ui.home.HomeScreen
-import com.example.ui.logs.LogsScreen
 import com.example.ui.networks.NetworksScreen
 import com.example.ui.profiles.ServersScreen
 import com.example.ui.redeem.RedeemCodeScreen
+import com.example.ui.settings.SettingsScreen
 import com.example.ui.theme.MyApplicationTheme
 
 private const val ROUTE_HOME = "home"
 private const val ROUTE_NETWORKS = "networks"
 private const val ROUTE_SERVERS = "servers"
-private const val ROUTE_LOGS = "logs"
-private const val ROUTE_ABOUT = "about"
+private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_REDEEM = "redeem"
 
 private data class TopLevelDestination(
@@ -88,10 +82,8 @@ private data class TopLevelDestination(
 private val topLevelDestinations =
   listOf(
     TopLevelDestination(ROUTE_HOME, R.string.nav_home, Icons.Default.Home, "nav_home"),
-    TopLevelDestination(ROUTE_NETWORKS, R.string.nav_networks, Icons.Default.Hub, "nav_networks"),
+    TopLevelDestination(ROUTE_NETWORKS, R.string.nav_networks, Icons.Default.Public, "nav_networks"),
     TopLevelDestination(ROUTE_SERVERS, R.string.nav_profiles, Icons.Default.Dns, "nav_profiles"),
-    TopLevelDestination(ROUTE_LOGS, R.string.nav_logs, Icons.Default.Terminal, "nav_logs"),
-    TopLevelDestination(ROUTE_ABOUT, R.string.nav_about, Icons.Default.Info, "nav_about"),
   )
 
 private data class PendingCombinedVpnRequest(
@@ -99,11 +91,6 @@ private data class PendingCombinedVpnRequest(
   val server: ServerAccountEntity,
   val effectiveProfile: ServerProfileEntity,
 )
-
-internal fun isAllowedMyVpnFileImport(bytes: ByteArray, fileName: String?): Boolean {
-  return MyVpnCrypto.isEncryptedMyVpnEnvelope(bytes) ||
-    fileName?.trim()?.endsWith(".myvpn", ignoreCase = true) == true
-}
 
 class MainActivity : ComponentActivity() {
   private val viewModel: AmktViewModel by viewModels {
@@ -123,76 +110,17 @@ class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
-    handleIncomingConfigIntent(intent)
     setContent {
       val isDarkTheme by viewModel.isDarkTheme.collectAsStateWithLifecycle()
       MyApplicationTheme(darkTheme = isDarkTheme) {
-        AmktInjectorApp(
-          viewModel = viewModel,
-          onReadUri = { uri -> readUriBytesAndName(uri) },
-        )
+        AmktInjectorApp(viewModel = viewModel)
       }
     }
-  }
-
-  override fun onNewIntent(intent: Intent) {
-    super.onNewIntent(intent)
-    setIntent(intent)
-    handleIncomingConfigIntent(intent)
-  }
-
-  private fun handleIncomingConfigIntent(intent: Intent?) {
-    if (intent == null) return
-    val uri: Uri? =
-      when (intent.action) {
-        Intent.ACTION_VIEW -> intent.data
-        Intent.ACTION_SEND ->
-          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
-          } else {
-            @Suppress("DEPRECATION")
-            intent.getParcelableExtra(Intent.EXTRA_STREAM)
-          }
-        else -> null
-      }
-    if (uri != null) {
-      val (bytes, name) = readUriBytesAndName(uri)
-      if (bytes != null) {
-        if (isAllowedMyVpnFileImport(bytes, name)) {
-          viewModel.importFromBytes(bytes, name)
-        } else {
-          viewModel.notifyMessage(".myvpn ဖိုင်ကိုသာ ထည့်သွင်းနိုင်ပါသည်")
-        }
-      }
-    }
-  }
-
-  private fun readUriBytesAndName(uri: Uri): Pair<ByteArray?, String?> {
-    return try {
-      val fileName = resolveDisplayName(uri)
-      val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-      bytes to fileName
-    } catch (_: Exception) {
-      null to null
-    }
-  }
-
-  private fun resolveDisplayName(uri: Uri): String? {
-    contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-      if (c.moveToFirst()) {
-        val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-        if (idx >= 0) return c.getString(idx)
-      }
-    }
-    return uri.lastPathSegment
   }
 }
 
 @Composable
-private fun AmktInjectorApp(
-  viewModel: AmktViewModel,
-  onReadUri: (Uri) -> Pair<ByteArray?, String?>,
-) {
+internal fun AmktInjectorApp(viewModel: AmktViewModel) {
   val context = LocalContext.current
   val navController = rememberNavController()
   val snackbarHostState = remember { SnackbarHostState() }
@@ -204,17 +132,11 @@ private fun AmktInjectorApp(
   val vpnState by viewModel.vpnState.collectAsStateWithLifecycle()
   val vpnTrafficStats by viewModel.vpnTrafficStats.collectAsStateWithLifecycle()
   val vpnSettings by viewModel.vpnSettings.collectAsStateWithLifecycle()
-  val passStatus by viewModel.passStatus.collectAsStateWithLifecycle()
   val ownerBanner by viewModel.ownerBanner.collectAsStateWithLifecycle()
   val isFetchingRemoteServers by viewModel.isFetchingRemoteServers.collectAsStateWithLifecycle()
   val remoteSyncFeedback by viewModel.remoteSyncFeedback.collectAsStateWithLifecycle()
-  val bannerConfigUrl by viewModel.bannerConfigUrl.collectAsStateWithLifecycle()
-  val isValidatingCode by viewModel.isValidatingCode.collectAsStateWithLifecycle()
-  val isFetchingBanner by viewModel.isFetchingBanner.collectAsStateWithLifecycle()
-  val redeemWebhookUrl by viewModel.redeemWebhookUrl.collectAsStateWithLifecycle()
   val isRedeemingCode by viewModel.isRedeemingCode.collectAsStateWithLifecycle()
   val redeemOutcome by viewModel.redeemOutcome.collectAsStateWithLifecycle()
-  val logs by viewModel.logs.collectAsStateWithLifecycle()
   val snackbarMessage by viewModel.snackbarMessage.collectAsStateWithLifecycle()
   val isDarkTheme by viewModel.isDarkTheme.collectAsStateWithLifecycle()
 
@@ -263,26 +185,6 @@ private fun AmktInjectorApp(
     }
   }
 
-  val openMyVpnFileLauncher =
-    rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-      if (uri != null) {
-        val (bytes, name) = onReadUri(uri)
-        if (bytes != null) {
-          if (isAllowedMyVpnFileImport(bytes, name)) {
-            viewModel.importFromBytes(bytes, name)
-          } else {
-            viewModel.notifyMessage(".myvpn ဖိုင်ကိုသာ ထည့်သွင်းနိုင်ပါသည်")
-          }
-        } else {
-          viewModel.notifyMessage("ဖိုင်ဖတ်မရပါ")
-        }
-      }
-    }
-
-  fun launchMyVpnImportPicker() {
-    openMyVpnFileLauncher.launch(arrayOf("*/*"))
-  }
-
   LaunchedEffect(snackbarMessage) {
     snackbarMessage?.let { msg ->
       snackbarHostState.showSnackbar(msg)
@@ -299,6 +201,12 @@ private fun AmktInjectorApp(
       popUpTo(ROUTE_HOME) { saveState = true }
       launchSingleTop = true
       restoreState = true
+    }
+  }
+
+  fun triggerRemoteUpdate() {
+    if (!isFetchingRemoteServers) {
+      viewModel.refreshSavedRemoteServers()
     }
   }
 
@@ -326,6 +234,28 @@ private fun AmktInjectorApp(
                 modifier = Modifier.testTag(dest.testTag),
               )
             }
+            // 4th bottom bar item: Update (fetches Remote JSON directly without leaving current tab)
+            NavigationBarItem(
+              selected = false,
+              onClick = { triggerRemoteUpdate() },
+              enabled = !isFetchingRemoteServers,
+              icon = {
+                if (isFetchingRemoteServers) {
+                  CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary,
+                  )
+                } else {
+                  Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = stringResource(R.string.nav_update),
+                  )
+                }
+              },
+              label = { Text(stringResource(R.string.nav_update), maxLines = 1) },
+              modifier = Modifier.testTag("nav_update"),
+            )
           }
         }
       },
@@ -349,6 +279,27 @@ private fun AmktInjectorApp(
                 modifier = Modifier.testTag(dest.testTag),
               )
             }
+            NavigationRailItem(
+              selected = false,
+              onClick = { triggerRemoteUpdate() },
+              enabled = !isFetchingRemoteServers,
+              icon = {
+                if (isFetchingRemoteServers) {
+                  CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary,
+                  )
+                } else {
+                  Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = stringResource(R.string.nav_update),
+                  )
+                }
+              },
+              label = { Text(stringResource(R.string.nav_update), maxLines = 1) },
+              modifier = Modifier.testTag("nav_update"),
+            )
           }
         }
 
@@ -363,15 +314,9 @@ private fun AmktInjectorApp(
               servers = servers,
               selectedNetwork = selectedNetwork,
               selectedServer = selectedServer,
-              recentLogs = logs,
               vpnState = vpnState,
               trafficStats = vpnTrafficStats,
-              vpnSettings = vpnSettings,
-              passStatus = passStatus,
               ownerBanner = ownerBanner,
-              isValidatingCode = isValidatingCode,
-              isDarkTheme = isDarkTheme,
-              onToggleTheme = viewModel::toggleTheme,
               onConnectClick = {
                 if (viewModel.isVpnActiveOrBusy()) {
                   viewModel.disconnectVpn()
@@ -380,28 +325,16 @@ private fun AmktInjectorApp(
                 }
               },
               onReconnectClick = { launchVpnConnectFlow() },
-              onToggleKillSwitch = viewModel::setKillSwitchEnabled,
-              onToggleAutoReconnect = viewModel::setAutoReconnectEnabled,
               onSelectNetwork = viewModel::selectNetwork,
               onSelectServer = viewModel::selectServer,
-              onImportClick = { launchMyVpnImportPicker() },
               onOpenNetworksClick = { navigateTopLevel(ROUTE_NETWORKS) },
               onOpenServersClick = { navigateTopLevel(ROUTE_SERVERS) },
-              onOpenLogsClick = { navigateTopLevel(ROUTE_LOGS) },
+              onOpenSettingsClick = { navController.navigate(ROUTE_SETTINGS) },
               onOpenRedeemClick = { navController.navigate(ROUTE_REDEEM) },
               isFetchingRemoteServers = isFetchingRemoteServers,
               remoteSyncFeedback = remoteSyncFeedback,
-              onRefreshServersClick = { onMissingUrl ->
-                viewModel.refreshSavedRemoteServers(
-                  onMissingUrl = {
-                    onMissingUrl()
-                    navigateTopLevel(ROUTE_ABOUT)
-                  }
-                )
-              },
+              onRefreshServersClick = { triggerRemoteUpdate() },
               onDismissRemoteSyncFeedback = viewModel::clearRemoteSyncFeedback,
-              onValidateCode = viewModel::validateAccessCode,
-              onClearCode = viewModel::clearAccessCode,
               onOpenBannerLink = { url ->
                 try {
                   val parsed = Uri.parse(url)
@@ -420,7 +353,8 @@ private fun AmktInjectorApp(
               networks = networks,
               selectedNetworkId = selectedNetwork?.id,
               onSelectNetwork = viewModel::selectNetwork,
-              onImportClick = { launchMyVpnImportPicker() },
+              onUpdateClick = { triggerRemoteUpdate() },
+              isUpdating = isFetchingRemoteServers,
             )
           }
 
@@ -429,56 +363,31 @@ private fun AmktInjectorApp(
               servers = servers,
               selectedServerId = selectedServer?.id,
               onSelectServer = viewModel::selectServer,
-              onImportClick = { launchMyVpnImportPicker() },
-              onSyncRemoteClick = {
-                viewModel.refreshSavedRemoteServers(
-                  onMissingUrl = { navigateTopLevel(ROUTE_ABOUT) }
-                )
-              },
+              onSyncRemoteClick = { triggerRemoteUpdate() },
+              isUpdating = isFetchingRemoteServers,
             )
           }
 
-          composable(ROUTE_LOGS) {
-            val copiedMsg = stringResource(R.string.msg_logs_copied)
-            LogsScreen(
-              logs = logs,
-              onCopyLogs = {
-                val cm =
-                  context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                cm?.setPrimaryClip(ClipData.newPlainText("AMKT Logs", viewModel.exportLogsText()))
-                viewModel.notifyMessage(copiedMsg)
-              },
-              onClearLogs = viewModel::clearLogs,
-            )
-          }
-
-          composable(ROUTE_ABOUT) {
-            AboutScreen(
-              isFetchingRemoteServers = isFetchingRemoteServers,
-              bannerConfigUrl = bannerConfigUrl,
-              isFetchingBanner = isFetchingBanner,
-              redeemWebhookUrl = redeemWebhookUrl,
-              onFetchRemoteServers = viewModel::fetchServersFromRemoteUrl,
-              onFetchOwnerBanner = viewModel::fetchOwnerBanner,
-              onSaveRedeemWebhookUrl = viewModel::saveRedeemWebhookUrl,
-              onResetRedeemWebhookUrl = viewModel::resetRedeemWebhookUrl,
+          composable(ROUTE_SETTINGS) {
+            SettingsScreen(
+              vpnSettings = vpnSettings,
+              isDarkTheme = isDarkTheme,
+              onToggleKillSwitch = viewModel::setKillSwitchEnabled,
+              onToggleAutoReconnect = viewModel::setAutoReconnectEnabled,
+              onToggleTheme = viewModel::toggleTheme,
               onOpenRedeemClick = { navController.navigate(ROUTE_REDEEM) },
+              onNavigateBack = { navController.popBackStack() },
             )
           }
 
           composable(ROUTE_REDEEM) {
             RedeemCodeScreen(
               deviceId = viewModel.deviceId,
-              webhookUrl = redeemWebhookUrl,
               isRedeeming = isRedeemingCode,
               lastOutcome = redeemOutcome,
               onRedeemSubmit = viewModel::redeemBuyerCode,
               onClearOutcome = viewModel::clearRedeemOutcome,
               onNavigateBack = { navController.popBackStack() },
-              onOpenWebhookSettings = {
-                viewModel.clearRedeemOutcome()
-                navigateTopLevel(ROUTE_ABOUT)
-              },
             )
           }
         }
