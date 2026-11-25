@@ -1,8 +1,13 @@
 package com.example.ui
 
+import android.content.Context
+import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.ads.AdsterraConfig
+import com.example.ads.ConnectGateDecision
+import com.example.ads.FreeTimeStatus
 import com.example.config.ConfigFileCodec
 import com.example.config.ConfigImportResult
 import com.example.config.SplitConfigImportResult
@@ -23,6 +28,9 @@ import com.example.dnstt.DnsttValidator
 import com.example.membership.MembershipRepository
 import com.example.membership.OwnerBanner
 import com.example.membership.PassStatus
+import com.example.openvpn.OpenVpnPayloadForwarder
+import com.example.openvpn.OvpnConfigParser
+import com.example.openvpn.OvpnSecretStore
 import com.example.redeem.RedeemCodeMapper
 import com.example.redeem.RedeemOutcome
 import com.example.redeem.RedeemRepository
@@ -32,12 +40,14 @@ import com.example.vpn.VpnPreferencesRepository
 import com.example.vpn.VpnProtectionSettings
 import com.example.vpn.VpnTrafficStats
 import com.example.vpn.VpnTunnelState
+import java.nio.charset.StandardCharsets
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -48,6 +58,12 @@ data class RemoteSyncFeedback(
   val message: String,
   val isError: Boolean,
   val timestampMs: Long = System.currentTimeMillis(),
+)
+
+data class PendingOvpnAuthImport(
+  val rawOvpnText: String,
+  val fileName: String?,
+  val suggestedName: String,
 )
 
 class AmktViewModel(
@@ -144,6 +160,31 @@ class AmktViewModel(
       initialValue = PassStatus(deviceId = membershipRepository.getDeviceId()),
     )
 
+  val hasValidNoAdsPass: StateFlow<Boolean> =
+    passStatus
+      .map { it.isCurrentlyValid(membershipRepository.currentLocalYmd()) }
+      .stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = false,
+      )
+
+  val adGateShownCountToday: StateFlow<Int> =
+    membershipRepository.adGateDailyCountFlow.stateIn(
+      scope = viewModelScope,
+      started = SharingStarted.WhileSubscribed(5_000),
+      initialValue = 0,
+    )
+
+  val freeTimeStatus: StateFlow<FreeTimeStatus> =
+    membershipRepository.freeTimeStatusFlow.stateIn(
+      scope = viewModelScope,
+      started = SharingStarted.WhileSubscribed(5_000),
+      initialValue = FreeTimeStatus(),
+    )
+
+  fun currentEpochMs(): Long = membershipRepository.currentEpochMs()
+
   val ownerBanner: StateFlow<OwnerBanner?> =
     membershipRepository.ownerBannerFlow.stateIn(
       scope = viewModelScope,
@@ -215,6 +256,9 @@ class AmktViewModel(
   private val _isDarkTheme = MutableStateFlow(true)
   val isDarkTheme: StateFlow<Boolean> = _isDarkTheme.asStateFlow()
 
+  private val _pendingOvpnAuthImport = MutableStateFlow<PendingOvpnAuthImport?>(null)
+  val pendingOvpnAuthImport: StateFlow<PendingOvpnAuthImport?> = _pendingOvpnAuthImport.asStateFlow()
+
   init {
     viewModelScope.launch {
       networkServerRepository?.initializeOnLaunch()
@@ -271,7 +315,19 @@ class AmktViewModel(
       repo.selectNetwork(network.id)
       logStore.append(
         tag = "NETWORK",
-        message = "ကွန်ရက် ရွေးချယ်ပြီး: ${network.name} [${network.resolvedPayloadMode.displayLabel}]",
+        message = "ကွန်ရက် ရွေးချယ်ပြီး: ${network.name}",
+        level = LogLevel.INFO,
+      )
+    }
+  }
+
+  fun clearSelectedNetwork() {
+    val repo = networkServerRepository ?: return
+    viewModelScope.launch {
+      repo.clearSelectedNetwork()
+      logStore.append(
+        tag = "NETWORK",
+        message = "ကွန်ရက် ရွေးချယ်မှု ဖြုတ်လိုက်ပြီး (တိုက်ရိုက်ချိတ်ဆက်မှု)",
         level = LogLevel.INFO,
       )
     }
@@ -399,6 +455,122 @@ class AmktViewModel(
       )
       _snackbarMessage.value = "ဆာဗာ ဖျက်ပြီးပါပြီ"
     }
+  }
+
+  /**
+   * Deletes a user-imported `.ovpn` server profile. Remote JSON servers cannot be deleted.
+   */
+  fun deleteUserImportedServer(server: ServerAccountEntity) {
+    val repo = networkServerRepository ?: return
+    if (!server.isUserImported || !server.isOpenVpnMode()) return
+    viewModelScope.launch {
+      val deleted = repo.deleteUserImportedServer(server.id)
+      if (deleted) {
+        logStore.append(
+          tag = "OPENVPN",
+          message = "ထည့်သွင်းထားသော OpenVPN ဆာဗာ ဖျက်လိုက်ပြီး: ${server.name}",
+          level = LogLevel.WARNING,
+        )
+        _snackbarMessage.value = "OpenVPN ဆာဗာ ဖျက်ပြီးပါပြီ"
+      }
+    }
+  }
+
+  /**
+   * Parses a user-selected `.ovpn` file. If `auth-user-pass` is required without inline
+   * credentials, prompts the user once via [pendingOvpnAuthImport]; otherwise encrypts and saves
+   * the OpenVPN profile immediately. Never logs `.ovpn` contents or credentials.
+   */
+  fun beginOvpnFileImport(rawBytes: ByteArray, fileName: String?) {
+    val repo = networkServerRepository ?: return
+    viewModelScope.launch {
+      val rawText =
+        withContext(Dispatchers.Default) { String(rawBytes, StandardCharsets.UTF_8) }
+      val parsed =
+        withContext(Dispatchers.Default) { OvpnConfigParser.parse(rawText) }.getOrElse { err ->
+          val reason = err.message ?: ".ovpn ဖိုင် ပုံစံ မမှန်ကန်ပါ"
+          logStore.append(
+            tag = "OPENVPN",
+            message = ".ovpn ဖိုင် ထည့်သွင်းမရပါ: $reason",
+            level = LogLevel.ERROR,
+          )
+          _snackbarMessage.value = ".ovpn ဖိုင် ဖတ်မရပါ — $reason"
+          return@launch
+        }
+
+      if (parsed.requiresAuthUserPass) {
+        val suggested = OvpnConfigParser.resolveProfileName(fileName, parsed)
+        _pendingOvpnAuthImport.value =
+          PendingOvpnAuthImport(
+            rawOvpnText = parsed.rawConfig,
+            fileName = fileName,
+            suggestedName = suggested,
+          )
+        return@launch
+      }
+
+      val result =
+        repo.importOvpnProfile(
+          rawOvpnText = parsed.rawConfig,
+          fileName = fileName,
+          selectAfterImport = true,
+        )
+      result.fold(
+        onSuccess = { stored ->
+          logStore.append(
+            tag = "OPENVPN",
+            message = "OpenVPN ဆာဗာ ထည့်သွင်းပြီး: ${stored.name}",
+            level = LogLevel.SUCCESS,
+          )
+          _snackbarMessage.value = "OpenVPN ဆာဗာ ထည့်သွင်းပြီးပါပြီ: ${stored.name}"
+        },
+        onFailure = { err ->
+          val reason = err.message ?: ".ovpn ဖိုင် ထည့်သွင်းမရပါ"
+          logStore.append(tag = "OPENVPN", message = reason, level = LogLevel.ERROR)
+          _snackbarMessage.value = ".ovpn ဖိုင် ဖတ်မရပါ — $reason"
+        },
+      )
+    }
+  }
+
+  fun completePendingOvpnAuthImport(username: String, password: String) {
+    val repo = networkServerRepository ?: return
+    val pending = _pendingOvpnAuthImport.value ?: return
+    val cleanUser = username.trim()
+    if (cleanUser.isBlank()) {
+      _snackbarMessage.value = "OpenVPN Username ထည့်သွင်းပါ"
+      return
+    }
+    _pendingOvpnAuthImport.value = null
+    viewModelScope.launch {
+      val result =
+        repo.importOvpnProfile(
+          rawOvpnText = pending.rawOvpnText,
+          fileName = pending.fileName,
+          username = cleanUser,
+          password = password,
+          selectAfterImport = true,
+        )
+      result.fold(
+        onSuccess = { stored ->
+          logStore.append(
+            tag = "OPENVPN",
+            message = "OpenVPN ဆာဗာ ထည့်သွင်းပြီး: ${stored.name}",
+            level = LogLevel.SUCCESS,
+          )
+          _snackbarMessage.value = "OpenVPN ဆာဗာ ထည့်သွင်းပြီးပါပြီ: ${stored.name}"
+        },
+        onFailure = { err ->
+          val reason = err.message ?: ".ovpn ဖိုင် ထည့်သွင်းမရပါ"
+          logStore.append(tag = "OPENVPN", message = reason, level = LogLevel.ERROR)
+          _snackbarMessage.value = ".ovpn ဖိုင် ဖတ်မရပါ — $reason"
+        },
+      )
+    }
+  }
+
+  fun cancelPendingOvpnAuthImport() {
+    _pendingOvpnAuthImport.value = null
   }
 
   suspend fun loadServerById(id: Long): ServerAccountEntity? =
@@ -654,11 +826,64 @@ class AmktViewModel(
   }
 
   /**
-   * Milestone 7 pre-flight validation combining the selected [NetworkConfigEntity] and
-   * [ServerAccountEntity] into an effective [ServerProfileEntity] before requesting VPN permission.
+   * Pre-flight validation combining the selected [NetworkConfigEntity] and [ServerAccountEntity]
+   * into an effective [ServerProfileEntity] before requesting VPN permission.
+   *
+   * OpenVPN servers are self-contained (`.ovpn` config) and do NOT require a selected Network.
    */
-  fun validateSelectionForVpnConnect(): Triple<NetworkConfigEntity, ServerAccountEntity, ServerProfileEntity>? {
+  fun validateSelectionForVpnConnect(): Triple<NetworkConfigEntity?, ServerAccountEntity, ServerProfileEntity>? {
     val network = selectedNetwork.value
+    val server = selectedServer.value
+
+    if (server != null && server.isOpenVpnMode()) {
+      if (server.isExpired()) {
+        val msg = ProfileExpiryChecker.buildExpiredRefusalMessage(server.name, server.expiryDate)
+        logStore.append(tag = "EXPIRY", message = msg, level = LogLevel.ERROR)
+        _snackbarMessage.value = msg
+        return null
+      }
+      if (network != null) {
+        val decryptedConfig =
+          runCatching { OvpnSecretStore.decrypt(server.ovpnConfigEncrypted) }.getOrNull().orEmpty()
+        val parsedOvpn = OvpnConfigParser.parse(decryptedConfig)
+        if (parsedOvpn.isFailure) {
+          val msg =
+            parsedOvpn.exceptionOrNull()?.message
+              ?: "OpenVPN (.ovpn) Config အချက်အလက် မမှန်ကန်ပါ"
+          logStore.append(tag = "CHECK", message = "သတိပေးချက်: $msg", level = LogLevel.WARNING)
+          _snackbarMessage.value = msg
+          return null
+        }
+        if (!parsedOvpn.getOrThrow().isTcp) {
+          val msg = OpenVpnPayloadForwarder.OVPN_TCP_ONLY_ERROR
+          logStore.append(tag = "CHECK", message = msg, level = LogLevel.WARNING)
+          _snackbarMessage.value = msg
+          return null
+        }
+        val netPayloadMode = network.resolvedPayloadMode
+        if (
+          (netPayloadMode == PayloadMode.HTTP_PAYLOAD || netPayloadMode == PayloadMode.WEBSOCKET) &&
+            network.payloadTemplate.isBlank()
+        ) {
+          val msg =
+            "${netPayloadMode.displayLabel} စနစ်အတွက် Payload စာသား ထည့်သွင်းရန် လိုအပ်ပါသည်"
+          logStore.append(tag = "CHECK", message = "သတိပေးချက်: $msg", level = LogLevel.WARNING)
+          _snackbarMessage.value = msg
+          return null
+        }
+        val combined = EffectiveConnectionCombiner.combine(network, server)
+        val validated =
+          validateEffectiveProfile(combined, networkLabel = network.name, serverLabel = server.name)
+            ?: return null
+        return Triple(network, server, validated)
+      }
+      val effective = EffectiveConnectionCombiner.fromOpenVpnServer(server)
+      val validated =
+        validateEffectiveProfile(effective, networkLabel = "", serverLabel = server.name)
+          ?: return null
+      return Triple(null, server, validated)
+    }
+
     if (network == null) {
       val msg = "ဦးစွာ ကွန်ရက် (Network) တစ်ခု ရွေးချယ်ပါ"
       _snackbarMessage.value = msg
@@ -666,7 +891,6 @@ class AmktViewModel(
       return null
     }
 
-    val server = selectedServer.value
     if (server == null) {
       val msg = "ဦးစွာ ဆာဗာ / အကောင့် (Server) တစ်ခု ရွေးချယ်ပါ"
       _snackbarMessage.value = msg
@@ -687,8 +911,11 @@ class AmktViewModel(
     return Triple(network, server, validated)
   }
 
+  fun prepareVpnPermissionIntent(context: Context): Intent? =
+    vpnController.prepareVpnPermissionIntent(context)
+
   fun startCombinedVpnAfterConsent(
-    network: NetworkConfigEntity,
+    network: NetworkConfigEntity?,
     server: ServerAccountEntity,
     effectiveProfile: ServerProfileEntity,
   ) {
@@ -700,6 +927,140 @@ class AmktViewModel(
       killSwitch = settings.killSwitchEnabled,
       autoReconnect = settings.autoReconnectEnabled,
     )
+  }
+
+  /**
+   * Checks whether tapping CONNECT on Home for [server] must pass through the 7-second Smartlink_2
+   * gate, reading fresh DataStore state. Free connections ALWAYS show the gate (no daily limit).
+   */
+  suspend fun shouldShowConnectGateFor(server: ServerAccountEntity): Boolean {
+    val todayYmd = membershipRepository.currentLocalYmd()
+    val currentPass = membershipRepository.passStatusFlow.first()
+    val shownToday = membershipRepository.getAdGateCountForDate(todayYmd)
+    return AdsterraConfig.shouldShowConnectGate(
+      server = server,
+      passStatus = currentPass,
+      shownTodayCount = shownToday,
+      todayYmd = todayYmd,
+    )
+  }
+
+  private var isEvaluatingConnectGate = false
+
+  /**
+   * Evaluates the Free-Time + Smartlink_2 connect gate decision on [viewModelScope]:
+   * - [ConnectGateDecision.SkipUnlimited]: INJ-redeemed server or valid no-ads code -> connect directly.
+   * - [ConnectGateDecision.ShowGateAndGrantInitialFree]: First free connect -> 7s gate + 6h initial free time -> connect.
+   * - [ConnectGateDecision.ShowGateAndConnect]: Active free time -> 7s gate (every connect, unlimited) -> connect.
+   * - [ConnectGateDecision.ShowGateAndGrantExtension]: Free time ended and grants < 2 -> 7s gate + +9h grant -> connect.
+   * - [ConnectGateDecision.RefuseFreeTimeExpiredNoGrantsLeft]: Free time ended and 2/2 daily grants used -> refuse.
+   */
+  fun resolveConnectDecision(
+    server: ServerAccountEntity,
+    onDecision: (ConnectGateDecision) -> Unit,
+  ) {
+    if (isEvaluatingConnectGate) return
+    isEvaluatingConnectGate = true
+    viewModelScope.launch {
+      val decision =
+        try {
+          evaluateConnectDecision(server)
+        } finally {
+          isEvaluatingConnectGate = false
+        }
+      onDecision(decision)
+    }
+  }
+
+  suspend fun evaluateConnectDecision(server: ServerAccountEntity): ConnectGateDecision {
+    val todayYmd = membershipRepository.currentLocalYmd()
+    val nowMs = membershipRepository.currentEpochMs()
+    val currentPass = membershipRepository.passStatusFlow.first()
+    val currentFree = membershipRepository.getFreeTimeStatus(todayYmd)
+    return AdsterraConfig.evaluateConnectGateDecision(
+      server = server,
+      passStatus = currentPass,
+      freeTimeStatus = currentFree,
+      nowMs = nowMs,
+      todayYmd = todayYmd,
+    )
+  }
+
+  /**
+   * Called after the 7s connect gate finishes on the device's first free connect: initializes
+   * 6 hours free time (consuming 0 of the 2 daily time-extension grants) and records gate showing.
+   */
+  fun completeInitialFreeConnectGate(onDone: () -> Unit) {
+    viewModelScope.launch {
+      val todayYmd = membershipRepository.currentLocalYmd()
+      val nowMs = membershipRepository.currentEpochMs()
+      membershipRepository.ensureInitialFreeTimeIfNeeded(nowMs = nowMs, todayYmd = todayYmd)
+      membershipRepository.recordAdGateShown(todayYmd)
+      onDone()
+    }
+  }
+
+  /**
+   * Called after the 7s connect gate finishes for a subsequent free connect while free time is
+   * active. Records the gate showing (unlimited) without touching the 2/2 grant counter.
+   */
+  fun recordConnectGateCompleted() {
+    viewModelScope.launch {
+      membershipRepository.recordAdGateShown()
+    }
+  }
+
+  /**
+   * Called when the 7-second external-browser Smartlink_2 watch finishes for a +9h time-extension
+   * grant (either from Home's Extend Time button or expired-time connect). Atomically increments
+   * the dedicated daily grant counter (max 2/day) and adds +9h free time.
+   */
+  fun completeAdGateGrant(
+    showSuccessSnackbar: Boolean = false,
+    onResult: (granted: Boolean) -> Unit = {},
+  ) {
+    viewModelScope.launch {
+      membershipRepository.recordAdGateShown()
+      val result = membershipRepository.recordAdWatchAndGrantFreeTime()
+      result.fold(
+        onSuccess = { status ->
+          if (showSuccessSnackbar) {
+            val left = status.remainingGrantsToday()
+            _snackbarMessage.value =
+              "+${AdsterraConfig.AD_GRANT_HOURS} နာရီ ထပ်တိုးပြီးပါပြီ (ယနေ့ $left ကြိမ်ကျန်)"
+          }
+          onResult(true)
+        },
+        onFailure = { err ->
+          val msg =
+            err.message
+              ?: "ယနေ့အတွက် ကြော်ငြာကြည့်၍ အချိန်ထပ်တိုးခွင့် (၂ ကြိမ်) ပြည့်သွားပါပြီ"
+          _snackbarMessage.value = msg
+          onResult(false)
+        },
+      )
+    }
+  }
+
+  /**
+   * Evaluates and records a Smartlink_2 connect gate showing. Shows on EVERY non-exempt connect
+   * with NO daily limit (only time-extension grants are capped at 2x/day).
+   */
+  suspend fun evaluateAndConsumeConnectGate(server: ServerAccountEntity): Boolean {
+    val todayYmd = membershipRepository.currentLocalYmd()
+    val currentPass = membershipRepository.passStatusFlow.first()
+    val shownToday = membershipRepository.getAdGateCountForDate(todayYmd)
+    val shouldShow =
+      AdsterraConfig.shouldShowConnectGate(
+        server = server,
+        passStatus = currentPass,
+        shownTodayCount = shownToday,
+        todayYmd = todayYmd,
+      )
+    if (shouldShow) {
+      membershipRepository.recordAdGateShown(todayYmd)
+    }
+    return shouldShow
   }
 
   /**
@@ -747,6 +1108,31 @@ class AmktViewModel(
       logStore.append(tag = "CHECK", message = msg, level = LogLevel.WARNING)
       _snackbarMessage.value = msg
       return null
+    }
+
+    if (active.isOpenVpnMode()) {
+      val decryptedConfig =
+        runCatching { OvpnSecretStore.decrypt(active.ovpnConfigEncrypted) }.getOrNull().orEmpty()
+      val parsedOvpn = OvpnConfigParser.parse(decryptedConfig)
+      if (parsedOvpn.isFailure) {
+        val msg =
+          parsedOvpn.exceptionOrNull()?.message
+            ?: "OpenVPN (.ovpn) Config အချက်အလက် မမှန်ကန်ပါ"
+        logStore.append(tag = "CHECK", message = "သတိပေးချက်: $msg", level = LogLevel.WARNING)
+        _snackbarMessage.value = msg
+        return null
+      }
+      if (active.ovpnAuthRequired) {
+        val decryptedUser =
+          runCatching { OvpnSecretStore.decrypt(active.username) }.getOrNull().orEmpty()
+        if (decryptedUser.isBlank()) {
+          val msg = "OpenVPN အတွက် Username/Password မပြည့်စုံပါ — .ovpn ဖိုင်ကို ပြန်ထည့်သွင်းပါ"
+          logStore.append(tag = "CHECK", message = "သတိပေးချက်: $msg", level = LogLevel.WARNING)
+          _snackbarMessage.value = msg
+          return null
+        }
+      }
+      return active
     }
 
     if (active.isVlessMode()) {
@@ -1067,10 +1453,11 @@ class AmktViewModel(
       _isFetchingRemoteServers.value = false
       result.fold(
         onSuccess = { summary ->
-          val summaryMsg = summary.toBurmeseMessage()
-          logStore.append(tag = "REMOTE", message = summaryMsg, level = LogLevel.SUCCESS)
-          _remoteSyncFeedback.value = RemoteSyncFeedback(message = summaryMsg, isError = false)
-          _snackbarMessage.value = summaryMsg
+          membershipRepository.saveOwnerBanner(summary.ownerBanner)
+          logStore.append(tag = "REMOTE", message = summary.toBurmeseMessage(), level = LogLevel.SUCCESS)
+          val shortConfirmation = "Update Finished"
+          _remoteSyncFeedback.value = RemoteSyncFeedback(message = shortConfirmation, isError = false)
+          _snackbarMessage.value = shortConfirmation
         },
         onFailure = { err ->
           val reason = err.message ?: "ဆွဲယူမရပါ"
@@ -1091,10 +1478,10 @@ class AmktViewModel(
     _isFetchingRemoteServers.value = false
     result.fold(
       onSuccess = { summary ->
-        val summaryMsg = summary.toBurmeseMessage()
-        logStore.append(tag = "REMOTE", message = summaryMsg, level = LogLevel.SUCCESS)
-        _remoteSyncFeedback.value = RemoteSyncFeedback(message = summaryMsg, isError = false)
-        _snackbarMessage.value = summaryMsg
+        logStore.append(tag = "REMOTE", message = summary.toBurmeseMessage(), level = LogLevel.SUCCESS)
+        val shortConfirmation = "Update Finished"
+        _remoteSyncFeedback.value = RemoteSyncFeedback(message = shortConfirmation, isError = false)
+        _snackbarMessage.value = shortConfirmation
       },
       onFailure = { err ->
         val reason = err.message ?: "ဆွဲယူမရပါ"

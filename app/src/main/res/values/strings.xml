@@ -284,6 +284,39 @@
     <string name="settings_redeem_desc">ဝယ်ယူထားသော ကုတ်ဖြင့် ဆာဗာရယူရန်</string>
     <string name="cd_settings">ဆက်တင်</string>
 
+    <!-- OpenVPN Transport -->
+    <string name="badge_openvpn">OpenVPN</string>
+    <string name="action_import_ovpn">Import .ovpn</string>
+    <string name="cd_import_ovpn">.ovpn ဖိုင် ထည့်သွင်းရန်</string>
+    <string name="cd_delete_imported_server">ထည့်သွင်းထားသော OpenVPN ဆာဗာ ဖျက်ရန်</string>
+    <string name="ovpn_auth_dialog_title">OpenVPN အကောင့် ထည့်သွင်းရန်</string>
+    <string name="ovpn_auth_dialog_desc">ဤ .ovpn Config သည် Username နှင့် Password လိုအပ်ပါသည်။ တစ်ကြိမ်သာ ထည့်သွင်းပြီး လုံခြုံစွာ Encrypt လုပ်၍ သိမ်းဆည်းပေးပါမည်။</string>
+    <string name="ovpn_auth_username_label">Username</string>
+    <string name="ovpn_auth_password_label">Password</string>
+    <string name="ovpn_auth_save_button">သိမ်းဆည်းပြီး ထည့်သွင်းမည်</string>
+    <string name="action_no_network_direct">ကွန်ရက်မရွေးဘဲ တိုက်ရိုက်ချိတ်ဆက်မည် (No Network)</string>
+
+    <!-- Owner Announcement Banner Fallback -->
+    <string name="owner_banner_fallback_title">AMKT VPN Telegram Channel</string>
+    <string name="owner_banner_fallback_subtitle">သတင်းအချက်အလက်နှင့် အကူအညီများအတွက် @amktvpn</string>
+
+    <!-- Smartlink_2 Connect Gate & Home Bottom Banner -->
+    <string name="ad_gate_countdown_format">ချိတ်ဆက်ရန် %1$d စက္ကန့် စောင့်ပါ</string>
+    <string name="ad_gate_browser_opened_title">ကြော်ငြာကို Browser တွင် ဖွင့်လိုက်ပါပြီ</string>
+    <string name="ad_gate_browser_opened_connect_body">အချိန်ပြည့်ပါက VPN ကို အလိုအလျောက် ချိတ်ဆက်ပေးပါမည်</string>
+    <string name="ad_gate_browser_opened_body">အချိန်ပြည့်ပါက Free အချိန် +%1$d နာရီ ထပ်တိုးပေးပါမည်</string>
+    <string name="ad_gate_reopen_browser_cta">Browser တွင် ထပ်ဖွင့်ရန်</string>
+    <string name="ad_gate_load_error_title">ကြော်ငြာစာမျက်နှာ ဖွင့်မရပါ</string>
+    <string name="ad_gate_load_error_body">အချိန်ပြည့်ပါက ဆက်လက်လုပ်ဆောင်ပေးပါမည်</string>
+    <string name="free_time_daily_limit_reached">ယနေ့အတွက် ကြော်ငြာကြည့်၍ အချိန်ထပ်တိုးခွင့် (၂ ကြိမ်) ပြည့်သွားပါပြီ — မနက်ဖြန် သန်းခေါင်ကျော်မှ ထပ်မံအသုံးပြုနိုင်ပါသည် သို့မဟုတ် ကုတ်ထည့်သွင်းပါ</string>
+    <string name="home_extend_time_cta">အချိန်တိုး</string>
+    <string name="home_extend_grants_left_format">%1$d left today</string>
+    <string name="home_extend_limit_used_message">ယနေ့ 2/2 ကြိမ် ပြည့်ပါပြီ — မနက်ဖြန် ထပ်တိုးနိုင်ပါသည်</string>
+    <string name="update_finished">Update Finished</string>
+    <string name="smartlink_banner_title">AMKT ကို ပံ့ပိုးရန် နှိပ်ပါ</string>
+    <string name="smartlink_banner_subtitle">Sponsored link ကို Browser တွင် ဖွင့်ကြည့်ရန်</string>
+    <string name="cd_smartlink_banner">Sponsored Banner</string>
+
     <!-- Content Descriptions -->
     <string name="cd_back">နောက်သို့</string>
     <string name="cd_close">ပိတ်ရန်</string>

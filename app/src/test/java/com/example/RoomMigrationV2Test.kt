@@ -76,6 +76,8 @@ class RoomMigrationV2Test {
           AmktDatabase.MIGRATION_1_2,
           AmktDatabase.MIGRATION_2_3,
           AmktDatabase.MIGRATION_3_4,
+          AmktDatabase.MIGRATION_4_5,
+          AmktDatabase.MIGRATION_5_6,
         )
         .allowMainThreadQueries()
         .build()
@@ -182,6 +184,8 @@ class RoomMigrationV2Test {
           AmktDatabase.MIGRATION_1_2,
           AmktDatabase.MIGRATION_2_3,
           AmktDatabase.MIGRATION_3_4,
+          AmktDatabase.MIGRATION_4_5,
+          AmktDatabase.MIGRATION_5_6,
         )
         .allowMainThreadQueries()
         .build()

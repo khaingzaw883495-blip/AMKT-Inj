@@ -26,6 +26,8 @@ data class ServerProfileEntity(
   val locked: Boolean = false,
   val notes: String = "",
   val isSelected: Boolean = false,
+  val ovpnConfigEncrypted: String = "",
+  val ovpnAuthRequired: Boolean = false,
   val createdAt: Long = System.currentTimeMillis(),
   val updatedAt: Long = System.currentTimeMillis(),
 ) {
@@ -49,6 +51,8 @@ data class ServerProfileEntity(
 
   fun isVlessMode(): Boolean = connectionMode == ConnectionMode.VLESS_WS
 
+  fun isOpenVpnMode(): Boolean = connectionMode == ConnectionMode.OPENVPN
+
   fun isExpired(todayYmd: Int = ProfileExpiryChecker.currentLocalYmd()): Boolean =
     ProfileExpiryChecker.isExpired(expiryDate, todayYmd)
 
@@ -59,14 +63,16 @@ data class ServerProfileEntity(
       ConnectionMode.SSH_SSL,
       ConnectionMode.SSH_WEBSOCKET,
       ConnectionMode.DNSTT -> true
-      ConnectionMode.VLESS_WS -> false
+      ConnectionMode.VLESS_WS,
+      ConnectionMode.OPENVPN -> false
     }
   }
 
-  fun supportsVpnTunnel(): Boolean = supportsSshTunnel() || isVlessMode()
+  fun supportsVpnTunnel(): Boolean = supportsSshTunnel() || isVlessMode() || isOpenVpnMode()
 
   fun primaryEndpointSummary(): String {
     return when (connectionMode) {
+      ConnectionMode.OPENVPN -> "OpenVPN"
       ConnectionMode.VLESS_WS -> {
         if (sshHost.isNotBlank()) "$sshHost:$sshPort"
         else if (vlessLink.isNotBlank()) "vless:// configured"
@@ -84,6 +90,7 @@ data class ServerProfileEntity(
 
   fun requiresAccountInput(): Boolean {
     return when (connectionMode) {
+      ConnectionMode.OPENVPN -> ovpnAuthRequired && username.isBlank()
       ConnectionMode.VLESS_WS -> vlessLink.isBlank() && username.isBlank()
       else -> username.isBlank() || password.isBlank()
     }

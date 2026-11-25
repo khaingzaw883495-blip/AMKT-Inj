@@ -425,7 +425,7 @@ class RedeemCodeFlowTest {
     override fun prepareVpnPermissionIntent(context: Context): android.content.Intent? = null
     override fun startTunnel(profile: ServerProfileEntity, killSwitch: Boolean, autoReconnect: Boolean) = Unit
     override fun startCombinedTunnel(
-      network: NetworkConfigEntity,
+      network: NetworkConfigEntity?,
       server: ServerAccountEntity,
       effectiveProfile: ServerProfileEntity,
       killSwitch: Boolean,

@@ -28,11 +28,17 @@ data class ServerAccountEntity(
   val locked: Boolean = false,
   val defaultNetworkId: Long? = null,
   val wasSelectedOnMigration: Boolean = false,
+  val ovpnConfigEncrypted: String = "",
+  val ovpnAuthRequired: Boolean = false,
+  val isUserImported: Boolean = false,
+  val isFromRemote: Boolean = false,
+  val onlineCount: Int? = null,
+  val userLimit: Int = DEFAULT_USER_LIMIT,
   val createdAt: Long = System.currentTimeMillis(),
   val updatedAt: Long = System.currentTimeMillis(),
 ) {
   /**
-   * Canonical server-level connection mode: SSH_DIRECT (SSH), DNSTT, or VLESS_WS.
+   * Canonical server-level connection mode: SSH_DIRECT (SSH), DNSTT, VLESS_WS, or OPENVPN.
    * Legacy SSH_PROXY / SSH_SSL / SSH_WEBSOCKET codes normalize cleanly to SSH_DIRECT because
    * transport payload / proxy / SSL settings live on [NetworkConfigEntity].
    */
@@ -41,12 +47,15 @@ data class ServerAccountEntity(
       when (ConnectionMode.fromCode(connectionMode)) {
         ConnectionMode.DNSTT -> ConnectionMode.DNSTT
         ConnectionMode.VLESS_WS -> ConnectionMode.VLESS_WS
+        ConnectionMode.OPENVPN -> ConnectionMode.OPENVPN
         else -> ConnectionMode.SSH_DIRECT
       }
 
   fun isDnsttMode(): Boolean = resolvedConnectionMode == ConnectionMode.DNSTT
 
   fun isVlessMode(): Boolean = resolvedConnectionMode == ConnectionMode.VLESS_WS
+
+  fun isOpenVpnMode(): Boolean = resolvedConnectionMode == ConnectionMode.OPENVPN
 
   fun isSshMode(): Boolean = resolvedConnectionMode == ConnectionMode.SSH_DIRECT
 
@@ -58,8 +67,12 @@ data class ServerAccountEntity(
   fun isExpired(todayYmd: Int = ProfileExpiryChecker.currentLocalYmd()): Boolean =
     ProfileExpiryChecker.isExpired(expiryDate, todayYmd)
 
+  fun isRedeemedServer(): Boolean =
+    tags.split(',').any { it.trim().startsWith("REDEEM:", ignoreCase = true) }
+
   fun primaryEndpointSummary(): String {
     return when (resolvedConnectionMode) {
+      ConnectionMode.OPENVPN -> "OpenVPN"
       ConnectionMode.VLESS_WS -> {
         if (host.isNotBlank()) "$host:$port"
         else if (vlessLink.isNotBlank()) "vless:// configured"
@@ -77,15 +90,39 @@ data class ServerAccountEntity(
 
   fun requiresAccountInput(): Boolean {
     return when (resolvedConnectionMode) {
+      ConnectionMode.OPENVPN -> ovpnAuthRequired && username.isBlank()
       ConnectionMode.VLESS_WS -> vlessLink.isBlank() && effectiveVlessUuid().isBlank()
       else -> username.isBlank() || password.isBlank()
     }
   }
 
+  val effectiveUserLimit: Int
+    get() = if (userLimit > 0) userLimit else DEFAULT_USER_LIMIT
+
+  /**
+   * Formats NAMO-style online/limit indicator.
+   * When [onlineCount] is provided (>= 0), shows `"Online: X | Limit: Y"`.
+   * When [onlineCount] is absent/null, shows `"Limit: Y"` only — never fabricates an online count.
+   */
+  fun formatOnlineLimitLabel(): String {
+    val count = onlineCount
+    return if (count != null && count >= 0) {
+      "Online: $count | Limit: $effectiveUserLimit"
+    } else {
+      "Limit: $effectiveUserLimit"
+    }
+  }
+
   companion object {
     const val DEFAULT_SSH_PORT = 22
+    const val DEFAULT_USER_LIMIT = 100
 
     val SUPPORTED_SERVER_MODES: List<ConnectionMode> =
-      listOf(ConnectionMode.SSH_DIRECT, ConnectionMode.DNSTT, ConnectionMode.VLESS_WS)
+      listOf(
+        ConnectionMode.SSH_DIRECT,
+        ConnectionMode.DNSTT,
+        ConnectionMode.VLESS_WS,
+        ConnectionMode.OPENVPN,
+      )
   }
 }

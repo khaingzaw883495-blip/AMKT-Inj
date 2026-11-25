@@ -83,7 +83,7 @@ interface VpnEngineController {
   )
 
   fun startCombinedTunnel(
-    network: NetworkConfigEntity,
+    network: NetworkConfigEntity?,
     server: ServerAccountEntity,
     effectiveProfile: ServerProfileEntity,
     killSwitch: Boolean = true,
@@ -108,6 +108,7 @@ object VpnRuntimeStateHolder {
   val trafficStats: StateFlow<VpnTrafficStats> = _trafficStats.asStateFlow()
 
   @Volatile var activeProfile: ServerProfileEntity? = null
+  @Volatile var activeNetwork: NetworkConfigEntity? = null
   @Volatile var activeNetworkId: Long = -1L
   @Volatile var activeServerId: Long = -1L
   @Volatile var activeNetworkName: String = ""
@@ -143,6 +144,7 @@ class AndroidVpnEngineController(
     autoReconnect: Boolean,
   ) {
     VpnRuntimeStateHolder.activeProfile = profile
+    VpnRuntimeStateHolder.activeNetwork = null
     VpnRuntimeStateHolder.activeNetworkId = -1L
     VpnRuntimeStateHolder.activeServerId = -1L
     VpnRuntimeStateHolder.activeNetworkName = ""
@@ -158,24 +160,25 @@ class AndroidVpnEngineController(
   }
 
   override fun startCombinedTunnel(
-    network: NetworkConfigEntity,
+    network: NetworkConfigEntity?,
     server: ServerAccountEntity,
     effectiveProfile: ServerProfileEntity,
     killSwitch: Boolean,
     autoReconnect: Boolean,
   ) {
     VpnRuntimeStateHolder.activeProfile = effectiveProfile
-    VpnRuntimeStateHolder.activeNetworkId = network.id
+    VpnRuntimeStateHolder.activeNetwork = network
+    VpnRuntimeStateHolder.activeNetworkId = network?.id ?: -1L
     VpnRuntimeStateHolder.activeServerId = server.id
-    VpnRuntimeStateHolder.activeNetworkName = network.name
+    VpnRuntimeStateHolder.activeNetworkName = network?.name.orEmpty()
     VpnRuntimeStateHolder.activeServerName = server.name
     val intent =
       Intent(appContext, AmktVpnService::class.java).apply {
         action = AmktVpnService.ACTION_START
         putExtra(AmktVpnService.EXTRA_PROFILE_ID, effectiveProfile.id)
-        putExtra(AmktVpnService.EXTRA_NETWORK_ID, network.id)
+        putExtra(AmktVpnService.EXTRA_NETWORK_ID, network?.id ?: -1L)
         putExtra(AmktVpnService.EXTRA_SERVER_ID, server.id)
-        putExtra(AmktVpnService.EXTRA_NETWORK_NAME, network.name)
+        putExtra(AmktVpnService.EXTRA_NETWORK_NAME, network?.name.orEmpty())
         putExtra(AmktVpnService.EXTRA_SERVER_NAME, server.name)
         putExtra(AmktVpnService.EXTRA_KILL_SWITCH, killSwitch)
         putExtra(AmktVpnService.EXTRA_AUTO_RECONNECT, autoReconnect)

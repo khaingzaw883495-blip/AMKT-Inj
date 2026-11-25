@@ -60,7 +60,8 @@ fun ModeBadge(
       ConnectionMode.SSH_WEBSOCKET ->
         MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
       ConnectionMode.SSH_PROXY,
-      ConnectionMode.DNSTT ->
+      ConnectionMode.DNSTT,
+      ConnectionMode.OPENVPN ->
         MaterialTheme.colorScheme.secondaryContainer to
           MaterialTheme.colorScheme.onSecondaryContainer
       ConnectionMode.SSH_SSL,

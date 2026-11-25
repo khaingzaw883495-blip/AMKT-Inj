@@ -28,6 +28,8 @@ class InjectorSocketFactory(
   private val connectTimeoutMs: Int = DEFAULT_CONNECT_TIMEOUT_MS,
   private val handshakeTimeoutMs: Int = DEFAULT_HANDSHAKE_TIMEOUT_MS,
   private val splitDelayMs: Long = DEFAULT_SPLIT_DELAY_MS,
+  private val redactHostLogs: Boolean = false,
+  private val socketProtector: ((Socket) -> Boolean)? = null,
 ) : SocketFactory {
 
   @Volatile private var aborted: Boolean = false
@@ -77,6 +79,7 @@ class InjectorSocketFactory(
     try {
       socket.tcpNoDelay = true
       socket.connect(InetSocketAddress(tcpHost, tcpPort), connectTimeoutMs)
+      runCatching { socketProtector?.invoke(socket) }
       if (aborted) {
         runCatching { socket.close() }
         throw IOException("ချိတ်ဆက်မှုကို အသုံးပြုသူမှ ပယ်ဖျက်လိုက်ပါပြီ")
@@ -96,7 +99,9 @@ class InjectorSocketFactory(
   @Throws(IOException::class)
   private fun connectWithHttpPayload(sshHost: String, sshPort: Int): Socket {
     val useProxy =
-      profile.connectionMode == ConnectionMode.SSH_PROXY && profile.proxyHost.isNotBlank()
+      (profile.connectionMode == ConnectionMode.SSH_PROXY ||
+        profile.connectionMode == ConnectionMode.OPENVPN) &&
+        profile.proxyHost.isNotBlank()
     val tcpHost = if (useProxy) profile.proxyHost.trim() else sshHost
     val tcpPort = if (useProxy) profile.proxyPort.coerceIn(1, 65535) else sshPort
 
@@ -138,6 +143,10 @@ class InjectorSocketFactory(
 
   @Throws(IOException::class)
   private fun connectWithWebSocketUpgrade(sshHost: String, sshPort: Int): Socket {
+    val useProxy = profile.proxyHost.isNotBlank()
+    val tcpHost = if (useProxy) profile.proxyHost.trim() else sshHost
+    val tcpPort = if (useProxy) profile.proxyPort.coerceIn(1, 65535) else sshPort
+
     val partTexts =
       PayloadInjector.buildPayloadPartTexts(
         template = profile.payloadTemplate,
@@ -150,15 +159,15 @@ class InjectorSocketFactory(
       throw IOException("WebSocket Payload စာသား မထည့်ရသေးပါ — Profile ပြင်ဆင်ပြီး Payload ထည့်သွင်းပါ")
     }
 
-    val socket = openTcpSocket(sshHost, sshPort)
+    val socket = openTcpSocket(tcpHost, tcpPort)
     try {
       sendPayloadPartsAndAwaitSuccess(
         socket = socket,
         mode = PayloadMode.WEBSOCKET,
         tag = "WS",
         sendLabel = "WebSocket Upgrade Payload",
-        tcpHost = sshHost,
-        tcpPort = sshPort,
+        tcpHost = tcpHost,
+        tcpPort = tcpPort,
         partTexts = partTexts,
       )
       socket.soTimeout = 0
@@ -176,7 +185,11 @@ class InjectorSocketFactory(
 
   @Throws(IOException::class)
   private fun connectWithSslTlsSni(sshHost: String, sshPort: Int): Socket {
-    val rawSocket = openTcpSocket(sshHost, sshPort)
+    val useProxy = profile.proxyHost.isNotBlank()
+    val tcpHost = if (useProxy) profile.proxyHost.trim() else sshHost
+    val tcpPort = if (useProxy) profile.proxyPort.coerceIn(1, 65535) else sshPort
+
+    val rawSocket = openTcpSocket(tcpHost, tcpPort)
     var sslSocket: SSLSocket? = null
     try {
       // Optional pre-TLS HTTP payload if the user configured a payload template
@@ -195,8 +208,8 @@ class InjectorSocketFactory(
             mode = PayloadMode.SSL_TLS_SNI,
             tag = "PAYLOAD",
             sendLabel = "TLS မတိုင်မီ HTTP Payload",
-            tcpHost = sshHost,
-            tcpPort = sshPort,
+            tcpHost = tcpHost,
+            tcpPort = tcpPort,
             partTexts = partTexts,
           )
         }
@@ -217,7 +230,7 @@ class InjectorSocketFactory(
       val sslParams = wrapped.sslParameters
       if (PayloadInjector.isValidDnsSniHostname(effectiveSni)) {
         sslParams.serverNames = listOf(SNIHostName(effectiveSni))
-      } else if (effectiveSni.isNotBlank()) {
+      } else if (effectiveSni.isNotBlank() && !redactHostLogs) {
         logStore.append(
           tag = "SSL",
           message = "သတိပေးချက်: '$effectiveSni' သည် IP လိပ်စာဖြစ်သဖြင့် SNI Hostname extension မထည့်ဘဲ TLS ဆက်လက်လုပ်ဆောင်မည်",
@@ -228,7 +241,12 @@ class InjectorSocketFactory(
 
       logStore.append(
         tag = "SSL",
-        message = "TLS/SSL Handshake စတင်နေသည် (SNI: ${effectiveSni.ifBlank { "none" }} -> $sshHost:$sshPort)...",
+        message =
+          if (redactHostLogs) {
+            "TLS/SSL Handshake စတင်နေသည်..."
+          } else {
+            "TLS/SSL Handshake စတင်နေသည် (SNI: ${effectiveSni.ifBlank { "none" }} -> $sshHost:$sshPort)..."
+          },
         level = LogLevel.INFO,
       )
 
@@ -236,12 +254,18 @@ class InjectorSocketFactory(
 
       val tlsSession = wrapped.session
       if (tlsSession == null || !tlsSession.isValid || tlsSession.protocol.equals("NONE", ignoreCase = true)) {
-        throw IOException("TLS/SSL Handshake အတည်ပြုမှု မအောင်မြင်ပါ (SNI: $effectiveSni)")
+        val errSuffix = if (redactHostLogs) "" else " (SNI: $effectiveSni)"
+        throw IOException("TLS/SSL Handshake အတည်ပြုမှု မအောင်မြင်ပါ$errSuffix")
       }
 
       logStore.append(
         tag = "SSL",
-        message = "TLS/SSL Handshake အောင်မြင်ပြီးပါပြီ (SNI: ${effectiveSni.ifBlank { sshHost }} • ${tlsSession.protocol})",
+        message =
+          if (redactHostLogs) {
+            "TLS/SSL Handshake အောင်မြင်ပြီးပါပြီ (${tlsSession.protocol})"
+          } else {
+            "TLS/SSL Handshake အောင်မြင်ပြီးပါပြီ (SNI: ${effectiveSni.ifBlank { sshHost }} • ${tlsSession.protocol})"
+          },
         level = LogLevel.SUCCESS,
       )
 
@@ -302,7 +326,12 @@ class InjectorSocketFactory(
       if (partsBytes.size > 1) " • split ${partsBytes.size} အပိုင်း" else ""
     logStore.append(
       tag = tag,
-      message = "$sendLabel ပေးပို့ပြီးပါပြီ ($tcpHost:$tcpPort • $totalBytes bytes$splitNote)",
+      message =
+        if (redactHostLogs) {
+          "$sendLabel ပေးပို့ပြီးပါပြီ ($totalBytes bytes$splitNote)"
+        } else {
+          "$sendLabel ပေးပို့ပြီးပါပြီ ($tcpHost:$tcpPort • $totalBytes bytes$splitNote)"
+        },
       level = LogLevel.INFO,
     )
 

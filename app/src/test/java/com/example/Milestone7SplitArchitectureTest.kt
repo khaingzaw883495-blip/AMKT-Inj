@@ -138,7 +138,13 @@ class Milestone7SplitArchitectureTest {
 
     val migratedDb =
       Room.databaseBuilder(context, AmktDatabase::class.java, dbName)
-        .addMigrations(AmktDatabase.MIGRATION_1_2, AmktDatabase.MIGRATION_2_3, AmktDatabase.MIGRATION_3_4)
+        .addMigrations(
+          AmktDatabase.MIGRATION_1_2,
+          AmktDatabase.MIGRATION_2_3,
+          AmktDatabase.MIGRATION_3_4,
+          AmktDatabase.MIGRATION_4_5,
+          AmktDatabase.MIGRATION_5_6,
+        )
         .allowMainThreadQueries()
         .build()
 
@@ -599,7 +605,8 @@ class Milestone7SplitArchitectureTest {
       val validated = viewModel.validateSelectionForVpnConnect()
       assertNotNull("Valid Network + Active Server must pass connect validation", validated)
       val (vNet, vSrv, combined) = validated!!
-      assertEquals("Good Direct Net", vNet.name)
+      assertNotNull(vNet)
+      assertEquals("Good Direct Net", vNet!!.name)
       assertEquals("Active Account", vSrv.name)
       assertEquals("active.example.com", combined.sshHost)
       assertEquals("activeUser", combined.username)

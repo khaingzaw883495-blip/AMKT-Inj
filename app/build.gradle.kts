@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.amktinjector.vkwmrx"
     minSdk = 24
     targetSdk = 36
-    versionCode = 15
-    versionName = "1.0.0-m9"
+    versionCode = 21
+    versionName = "1.0.0-m15"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -136,6 +136,7 @@ dependencies {
   implementation(libs.moshi.kotlin)
   implementation(libs.mwiede.jsch)
   implementation(libs.hevtunnel)
+  implementation(libs.ics.openvpn)
   implementation(libs.okhttp)
   // implementation(libs.play.services.location)
   // implementation(libs.retrofit)

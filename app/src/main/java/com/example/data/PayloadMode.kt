@@ -54,7 +54,8 @@ enum class PayloadMode(
         ConnectionMode.SSH_SSL -> SSL_TLS_SNI
         ConnectionMode.SSH_DIRECT,
         ConnectionMode.DNSTT,
-        ConnectionMode.VLESS_WS -> DIRECT
+        ConnectionMode.VLESS_WS,
+        ConnectionMode.OPENVPN -> DIRECT
       }
     }
   }

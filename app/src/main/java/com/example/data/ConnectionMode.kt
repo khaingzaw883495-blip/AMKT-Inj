@@ -41,6 +41,12 @@ enum class ConnectionMode(
     displayLabel = "VLESS + WS",
     shortLabel = "VLESS",
     burmeseDescription = "CloudFront VLESS over WebSocket (vless:// လင့်ခ်ဖြင့်)",
+  ),
+  OPENVPN(
+    code = "OPENVPN",
+    displayLabel = "OpenVPN",
+    shortLabel = "OpenVPN",
+    burmeseDescription = "OpenVPN (.ovpn config ဖိုင်ဖြင့် System-wide VPN ချိတ်ဆက်မှု)",
   );
 
   companion object {
@@ -51,6 +57,7 @@ enum class ConnectionMode(
         "SSH_WS", "SSH WS", "WS", "WEBSOCKET" -> SSH_WEBSOCKET
         "SLOWDNS", "DNS" -> DNSTT
         "VLESS", "VLESS_WEBSOCKET" -> VLESS_WS
+        "OPENVPN", "OVPN", "OPEN_VPN" -> OPENVPN
         "DIRECT" -> SSH_DIRECT
         "PROXY" -> SSH_PROXY
         "SSL", "SNI", "SSH_TLS" -> SSH_SSL

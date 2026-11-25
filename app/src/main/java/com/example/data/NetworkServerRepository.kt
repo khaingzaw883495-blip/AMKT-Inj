@@ -4,6 +4,7 @@ import com.example.config.ImportedServerItem
 import com.example.config.MyVpnConfigDto
 import com.example.config.NetworkConfigDto
 import com.example.config.ServerAccountDto
+import com.example.membership.OwnerBanner
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -32,15 +33,32 @@ data class SplitImportOutcome(
 data class SplitRemoteSyncSummary(
   val networksAdded: Int,
   val networksUpdated: Int,
+  val networksRemoved: Int = 0,
   val serversAdded: Int,
   val serversUpdated: Int,
+  val serversRemoved: Int = 0,
   val replacedAll: Boolean,
+  val ownerBanner: OwnerBanner? = null,
 ) {
   fun toBurmeseMessage(): String {
     return if (replacedAll) {
       "Remote JSON မှ ကွန်ရက် $networksAdded ခု နှင့် ဆာဗာ $serversAdded ခု ဖြင့် အစားထိုးပြီးပါပြီ"
     } else {
-      "Remote JSON ဆွဲယူပြီးပါပြီ — ကွန်ရက် (အသစ် $networksAdded၊ အပ်ဒိတ် $networksUpdated) • ဆာဗာ (အသစ် $serversAdded၊ အပ်ဒိတ် $serversUpdated)"
+      val netParts =
+        buildList {
+            add("အသစ် $networksAdded")
+            add("အပ်ဒိတ် $networksUpdated")
+            if (networksRemoved > 0) add("ဖယ်ရှား $networksRemoved")
+          }
+          .joinToString("၊ ")
+      val srvParts =
+        buildList {
+            add("အသစ် $serversAdded")
+            add("အပ်ဒိတ် $serversUpdated")
+            if (serversRemoved > 0) add("ဖယ်ရှား $serversRemoved")
+          }
+          .joinToString("၊ ")
+      "Remote JSON ဆွဲယူပြီးပါပြီ — ကွန်ရက် ($netParts) • ဆာဗာ ($srvParts)"
     }
   }
 }
@@ -135,6 +153,10 @@ class NetworkServerRepository(
 
   suspend fun selectNetwork(networkId: Long) {
     remoteServerListRepository.saveLastNetworkId(networkId)
+  }
+
+  suspend fun clearSelectedNetwork() {
+    remoteServerListRepository.saveLastNetworkId(null)
   }
 
   suspend fun selectServer(serverId: Long) {
@@ -244,6 +266,72 @@ class NetworkServerRepository(
   }
 
   /**
+   * Deletes a server ONLY if it was explicitly imported by the user as a `.ovpn` file.
+   * Remote JSON servers can NEVER be deleted through this method.
+   */
+  suspend fun deleteUserImportedServer(serverId: Long): Boolean {
+    val existing = serverDao.getServerById(serverId) ?: return false
+    if (!existing.isUserImported || !existing.isOpenVpnMode()) return false
+    deleteServer(serverId)
+    return true
+  }
+
+  /**
+   * Imports a user-selected `.ovpn` file, encrypts the config and optional `auth-user-pass`
+   * credentials at rest using AES-256-GCM, and saves it as a name-only OpenVPN server profile.
+   */
+  suspend fun importOvpnProfile(
+    rawOvpnText: String,
+    fileName: String? = null,
+    username: String = "",
+    password: String = "",
+    selectAfterImport: Boolean = true,
+  ): Result<ServerAccountEntity> {
+    val parsed =
+      com.example.openvpn.OvpnConfigParser.parse(rawOvpnText).getOrElse { err ->
+        return Result.failure(err)
+      }
+    val resolvedName = com.example.openvpn.OvpnConfigParser.resolveProfileName(fileName, parsed)
+    val encryptedConfig = com.example.openvpn.OvpnSecretStore.encrypt(parsed.rawConfig)
+    val encryptedUser =
+      if (username.trim().isNotBlank()) com.example.openvpn.OvpnSecretStore.encrypt(username.trim())
+      else ""
+    val encryptedPass =
+      if (password.isNotBlank()) com.example.openvpn.OvpnSecretStore.encrypt(password) else ""
+
+    val now = System.currentTimeMillis()
+    val entity =
+      ServerAccountEntity(
+        id = 0L,
+        name = resolvedName,
+        connectionMode = ConnectionMode.OPENVPN.code,
+        host = "",
+        port = 0,
+        username = encryptedUser,
+        password = encryptedPass,
+        expiryDate = "",
+        region = "",
+        tags = "",
+        notes = "",
+        locked = false,
+        defaultNetworkId = null,
+        wasSelectedOnMigration = false,
+        ovpnConfigEncrypted = encryptedConfig,
+        ovpnAuthRequired = parsed.requiresAuthUserPass,
+        isUserImported = true,
+        isFromRemote = false,
+        createdAt = now,
+        updatedAt = now,
+      )
+    val newId = serverDao.insertServer(entity)
+    val stored = entity.copy(id = newId)
+    if (selectAfterImport) {
+      remoteServerListRepository.saveLastServerId(newId)
+    }
+    return Result.success(stored)
+  }
+
+  /**
    * Upserts a Server returned by the buyer redeem-code webhook:
    * - Matches existing server by normalized name OR matching `REDEEM:<CODE>` tag so redeeming the
    *   same code again updates in place without duplicating.
@@ -278,6 +366,8 @@ class NetworkServerRepository(
             tags = mergedTags,
             defaultNetworkId = match.defaultNetworkId,
             wasSelectedOnMigration = match.wasSelectedOnMigration,
+            isUserImported = false,
+            isFromRemote = false,
             createdAt = match.createdAt,
             updatedAt = now,
           )
@@ -290,6 +380,8 @@ class NetworkServerRepository(
             tags = incoming.tags.ifBlank { codeTag },
             defaultNetworkId = null,
             wasSelectedOnMigration = false,
+            isUserImported = false,
+            isFromRemote = false,
             createdAt = now,
             updatedAt = now,
           )
@@ -344,7 +436,13 @@ class NetworkServerRepository(
           val stamp = now - idx * 10L
           val newId =
             networkDao.insertNetwork(
-              incomingNet.copy(id = 0L, createdAt = stamp, updatedAt = stamp)
+              incomingNet.copy(
+                id = 0L,
+                isUserImported = true,
+                isFromRemote = false,
+                createdAt = stamp,
+                updatedAt = stamp,
+              )
             )
           sigToId[sig] = newId
           nameToId.putIfAbsent(normalizeNameKey(incomingNet.name), newId)
@@ -378,6 +476,8 @@ class NetworkServerRepository(
             id = 0L,
             defaultNetworkId = linkedNetId,
             wasSelectedOnMigration = false,
+            isUserImported = true,
+            isFromRemote = false,
             createdAt = stamp,
             updatedAt = stamp,
           )
@@ -453,7 +553,13 @@ class NetworkServerRepository(
       allNetDtos.forEachIndexed { idx, dto ->
         val entity = dto.toEntity(fallbackName = "Network #${idx + 1}")
         dedupedNets[normalizeNameKey(entity.name)] =
-          entity.copy(id = 0L, createdAt = now - idx * 10L, updatedAt = now - idx * 10L)
+          entity.copy(
+            id = 0L,
+            isUserImported = false,
+            isFromRemote = true,
+            createdAt = now - idx * 10L,
+            updatedAt = now - idx * 10L,
+          )
       }
       val insertedNetIds =
         if (dedupedNets.isNotEmpty()) {
@@ -482,6 +588,8 @@ class NetworkServerRepository(
           entity.copy(
             id = 0L,
             defaultNetworkId = linkedNetId,
+            isUserImported = false,
+            isFromRemote = true,
             createdAt = now - idx * 10L,
             updatedAt = now - idx * 10L,
           )
@@ -501,13 +609,20 @@ class NetworkServerRepository(
       return SplitRemoteSyncSummary(
         networksAdded = insertedNetIds.size,
         networksUpdated = 0,
+        networksRemoved = 0,
         serversAdded = insertedSrvIds.size,
         serversUpdated = 0,
+        serversRemoved = 0,
         replacedAll = true,
+        ownerBanner = parsed.ownerBanner,
       )
     }
 
-    // Merge mode (default): separate merge-by-name for Networks and for Servers
+    // Merge mode (default):
+    // 1. Upsert incoming Networks and Servers by normalized name.
+    // 2. Delete remote-origin Networks/Servers that disappeared from the incoming remote JSON,
+    //    NEVER deleting user-imported (.myvpn / .ovpn) or INJ-redeemed entries.
+    // 3. Report exact new / updated / removed counts matching the remote JSON.
     val existingNets = networkDao.getAllNetworksSnapshot()
     val netByName = existingNets.associateBy { normalizeNameKey(it.name) }.toMutableMap()
     val netBySig = existingNets.associateBy { it.normalizedSignature() }.toMutableMap()
@@ -521,6 +636,7 @@ class NetworkServerRepository(
 
     var networksAdded = 0
     var networksUpdated = 0
+    var networksRemoved = 0
     var firstAddedNetId: Long? = null
     var offset = 0
 
@@ -535,13 +651,33 @@ class NetworkServerRepository(
         netBySig[merged.normalizedSignature()] = merged
         networksUpdated += 1
       } else {
-        val fresh = dto.toEntity(fallback).copy(id = 0L, createdAt = stamp, updatedAt = stamp)
+        val fresh =
+          dto.toEntity(fallback).copy(
+            id = 0L,
+            isUserImported = false,
+            isFromRemote = true,
+            createdAt = stamp,
+            updatedAt = stamp,
+          )
         val newId = networkDao.insertNetwork(fresh)
         val stored = fresh.copy(id = newId)
         netByName[key] = stored
         netBySig[stored.normalizedSignature()] = stored
         if (firstAddedNetId == null) firstAddedNetId = newId
         networksAdded += 1
+      }
+    }
+
+    // Remove remote-sourced networks that are no longer present in the remote JSON
+    if (parsed.hasNetworksSection) {
+      for (existing in existingNets) {
+        val key = normalizeNameKey(existing.name)
+        if (existing.isFromRemote && !existing.isUserImported && key !in incomingNetsByName.keys) {
+          serverDao.clearNetworkReferences(existing.id)
+          networkDao.deleteNetworkById(existing.id)
+          netByName.remove(key)
+          networksRemoved += 1
+        }
       }
     }
 
@@ -557,6 +693,7 @@ class NetworkServerRepository(
 
     var serversAdded = 0
     var serversUpdated = 0
+    var serversRemoved = 0
     var firstAddedSrvId: Long? = null
 
     for ((key, pair) in incomingSrvsByName) {
@@ -583,12 +720,16 @@ class NetworkServerRepository(
           if (explicitNetName.isNotEmpty()) {
             resolvedNetId
           } else {
-            resolvedNetId ?: fallbackSelectedNetworkId?.takeIf { it > 0L }
+            resolvedNetId ?: fallbackSelectedNetworkId?.takeIf { id ->
+              id > 0L && netByName.values.any { it.id == id }
+            }
           }
         val fresh =
           dto.toEntity(fallback).copy(
             id = 0L,
             defaultNetworkId = linkedDefaultNetId,
+            isUserImported = false,
+            isFromRemote = true,
             createdAt = stamp,
             updatedAt = stamp,
           )
@@ -599,6 +740,23 @@ class NetworkServerRepository(
       }
     }
 
+    // Remove remote-sourced servers that are no longer present in the remote JSON
+    // (never deleting .myvpn/.ovpn user-imported or INJ-redeemed servers)
+    if (parsed.hasServersSection) {
+      for (existing in existingSrvs) {
+        val key = normalizeNameKey(existing.name)
+        val canDelete =
+          existing.isFromRemote && !existing.isUserImported && !existing.isRedeemedServer()
+        if (canDelete && key !in incomingSrvsByName.keys) {
+          serverDao.deleteServerById(existing.id)
+          srvByName.remove(key)
+          serversRemoved += 1
+        }
+      }
+    }
+
+    val finalNets = networkDao.getAllNetworksSnapshot()
+    val finalSrvs = serverDao.getAllServersSnapshot()
     val (savedNetId, savedSrvId) = remoteServerListRepository.getLastSelection()
     if (savedNetId <= 0L && firstAddedNetId != null) {
       remoteServerListRepository.saveLastNetworkId(firstAddedNetId)
@@ -606,13 +764,18 @@ class NetworkServerRepository(
     if (savedSrvId <= 0L && firstAddedSrvId != null) {
       remoteServerListRepository.saveLastServerId(firstAddedSrvId)
     }
+    // Revalidate saved selection in case a previously selected network or server was removed
+    ensureValidLastSelection(finalNets, finalSrvs)
 
     return SplitRemoteSyncSummary(
       networksAdded = networksAdded,
       networksUpdated = networksUpdated,
+      networksRemoved = networksRemoved,
       serversAdded = serversAdded,
       serversUpdated = serversUpdated,
+      serversRemoved = serversRemoved,
       replacedAll = false,
+      ownerBanner = parsed.ownerBanner,
     )
   }
 
@@ -693,6 +856,7 @@ class NetworkServerRepository(
           if (incoming.effectiveProxyPort in 1..65535) incoming.effectiveProxyPort
           else existing.httpProxyPort,
         locked = existing.locked || incoming.locked,
+        isFromRemote = if (existing.isUserImported) false else true,
         updatedAt = now,
       )
     }
@@ -704,8 +868,58 @@ class NetworkServerRepository(
       now: Long = System.currentTimeMillis(),
     ): ServerAccountEntity {
       val explicitMode =
-        if (incoming.effectiveModeRaw.isNotBlank()) incoming.inferServerConnectionMode()
-        else existing.resolvedConnectionMode
+        if (incoming.effectiveModeRaw.isNotBlank() || incoming.ovpnBase64.isNotBlank()) {
+          incoming.inferServerConnectionMode()
+        } else {
+          existing.resolvedConnectionMode
+        }
+      val mergedLimit = incoming.explicitUserLimit ?: existing.effectiveUserLimit
+      val preserveLocalOwnership = existing.isUserImported || existing.isRedeemedServer()
+
+      if (explicitMode == ConnectionMode.OPENVPN) {
+        val parsedOvpn =
+          if (incoming.ovpnBase64.isNotBlank()) {
+            com.example.openvpn.OvpnConfigParser.decodeBase64Ovpn(incoming.ovpnBase64).getOrThrow()
+          } else {
+            null
+          }
+        val mergedOvpnEncrypted =
+          if (parsedOvpn != null) com.example.openvpn.OvpnSecretStore.encrypt(parsedOvpn.rawConfig)
+          else existing.ovpnConfigEncrypted
+        val mergedUser =
+          if (incoming.username.trim().isNotBlank()) {
+            com.example.openvpn.OvpnSecretStore.encrypt(incoming.username.trim())
+          } else {
+            existing.username
+          }
+        val mergedPass =
+          if (incoming.password.isNotBlank()) {
+            com.example.openvpn.OvpnSecretStore.encrypt(incoming.password)
+          } else {
+            existing.password
+          }
+        return existing.copy(
+          name = incoming.name.trim().ifBlank { existing.name },
+          connectionMode = ConnectionMode.OPENVPN.code,
+          host = "",
+          port = 0,
+          username = mergedUser,
+          password = mergedPass,
+          expiryDate = incoming.effectiveExpiryDate.ifBlank { existing.expiryDate },
+          region = incoming.region.trim().ifBlank { existing.region },
+          tags = incoming.tags.trim().ifBlank { existing.tags },
+          notes = incoming.notes.trim().ifBlank { existing.notes },
+          locked = existing.locked || incoming.locked,
+          ovpnConfigEncrypted = mergedOvpnEncrypted,
+          ovpnAuthRequired = parsedOvpn?.requiresAuthUserPass ?: existing.ovpnAuthRequired,
+          isUserImported = existing.isUserImported,
+          isFromRemote = !preserveLocalOwnership,
+          onlineCount = incoming.effectiveOnlineCount,
+          userLimit = mergedLimit,
+          updatedAt = now,
+        )
+      }
+
       return existing.copy(
         name = incoming.name.trim().ifBlank { existing.name },
         connectionMode = explicitMode.code,
@@ -718,12 +932,15 @@ class NetworkServerRepository(
         dnsttResolver = incoming.dnsttResolver.trim().ifBlank { existing.dnsttResolver },
         vlessLink = incoming.vlessLink.trim().ifBlank { existing.vlessLink },
         vlessUuid = incoming.vlessUuid.trim().ifBlank { existing.vlessUuid },
-        expiryDate = incoming.expiryDate.trim().ifBlank { existing.expiryDate },
+        expiryDate = incoming.effectiveExpiryDate.ifBlank { existing.expiryDate },
         region = incoming.region.trim().ifBlank { existing.region },
         tags = incoming.tags.trim().ifBlank { existing.tags },
         notes = incoming.notes.trim().ifBlank { existing.notes },
         locked = existing.locked || incoming.locked,
         defaultNetworkId = resolvedNetworkId ?: existing.defaultNetworkId,
+        isFromRemote = !preserveLocalOwnership,
+        onlineCount = incoming.effectiveOnlineCount,
+        userLimit = mergedLimit,
         updatedAt = now,
       )
     }

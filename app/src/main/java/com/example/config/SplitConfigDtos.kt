@@ -106,11 +106,23 @@ data class ServerAccountDto(
   @Json(name = "vless_link") val vlessLink: String = "",
   @Json(name = "vless_uuid") val vlessUuid: String = "",
   @Json(name = "expiry_date") val expiryDate: String = "",
+  @Json(name = "expiry") val expiry: String = "",
+  @Json(name = "ovpn") val ovpnBase64: String = "",
   @Json(name = "region") val region: String = "",
   @Json(name = "tags") val tags: String = "",
   @Json(name = "notes") val notes: String = "",
   @Json(name = "locked") val locked: Boolean = false,
   @Json(name = "network_name") val networkName: String = "",
+  @Json(name = "online") val online: Int? = null,
+  @Json(name = "online_users") val onlineUsers: Int? = null,
+  @Json(name = "online_count") val onlineCount: Int? = null,
+  @Json(name = "users_online") val usersOnline: Int? = null,
+  @Json(name = "active_users") val activeUsers: Int? = null,
+  @Json(name = "limit") val limit: Int? = null,
+  @Json(name = "max_users") val maxUsers: Int? = null,
+  @Json(name = "user_limit") val userLimit: Int? = null,
+  @Json(name = "max_online") val maxOnline: Int? = null,
+  @Json(name = "capacity") val capacity: Int? = null,
 ) {
   val effectiveHost: String
     get() = host.trim().ifBlank { legacySshHost.trim() }
@@ -126,12 +138,30 @@ data class ServerAccountDto(
   val effectiveModeRaw: String
     get() = connectionMode.trim().ifBlank { legacyMode.trim() }
 
+  val effectiveExpiryDate: String
+    get() = expiryDate.trim().ifBlank { expiry.trim() }
+
+  val effectiveOnlineCount: Int?
+    get() =
+      listOf(online, onlineUsers, onlineCount, usersOnline, activeUsers)
+        .firstOrNull { it != null && it >= 0 }
+
+  val explicitUserLimit: Int?
+    get() =
+      listOf(limit, maxUsers, userLimit, maxOnline, capacity)
+        .firstOrNull { it != null && it > 0 }
+
+  val effectiveUserLimit: Int
+    get() = explicitUserLimit ?: ServerAccountEntity.DEFAULT_USER_LIMIT
+
   fun inferServerConnectionMode(): ConnectionMode {
     val explicit = ConnectionMode.fromCode(effectiveModeRaw)
     return when {
+      explicit == ConnectionMode.OPENVPN -> ConnectionMode.OPENVPN
       explicit == ConnectionMode.DNSTT -> ConnectionMode.DNSTT
       explicit == ConnectionMode.VLESS_WS -> ConnectionMode.VLESS_WS
       explicit != null -> ConnectionMode.SSH_DIRECT
+      ovpnBase64.isNotBlank() -> ConnectionMode.OPENVPN
       vlessLink.isNotBlank() || vlessUuid.isNotBlank() -> ConnectionMode.VLESS_WS
       dnsttNameserver.isNotBlank() && dnsttPublicKey.isNotBlank() -> ConnectionMode.DNSTT
       else -> ConnectionMode.SSH_DIRECT
@@ -140,6 +170,51 @@ data class ServerAccountDto(
 
   fun toEntity(fallbackName: String): ServerAccountEntity {
     val mode = inferServerConnectionMode()
+    if (mode == ConnectionMode.OPENVPN) {
+      val parsed =
+        if (ovpnBase64.isNotBlank()) {
+          com.example.openvpn.OvpnConfigParser.decodeBase64Ovpn(ovpnBase64).getOrThrow()
+        } else {
+          null
+        }
+      val resolvedName =
+        name.trim().ifBlank {
+          fallbackName.ifBlank { parsed?.primaryRemoteHost ?: "OpenVPN" }
+        }
+      val encryptedOvpn =
+        if (parsed != null) com.example.openvpn.OvpnSecretStore.encrypt(parsed.rawConfig) else ""
+      val encryptedUser =
+        if (username.trim().isNotBlank()) {
+          com.example.openvpn.OvpnSecretStore.encrypt(username.trim())
+        } else {
+          ""
+        }
+      val encryptedPass =
+        if (password.isNotBlank()) {
+          com.example.openvpn.OvpnSecretStore.encrypt(password)
+        } else {
+          ""
+        }
+      return ServerAccountEntity(
+        name = resolvedName,
+        connectionMode = ConnectionMode.OPENVPN.code,
+        host = "",
+        port = 0,
+        username = encryptedUser,
+        password = encryptedPass,
+        expiryDate = effectiveExpiryDate,
+        region = region.trim(),
+        tags = tags.trim(),
+        notes = notes.trim(),
+        locked = locked,
+        ovpnConfigEncrypted = encryptedOvpn,
+        ovpnAuthRequired = parsed?.requiresAuthUserPass ?: false,
+        isUserImported = false,
+        onlineCount = effectiveOnlineCount,
+        userLimit = effectiveUserLimit,
+      )
+    }
+
     val resolvedName =
       name.trim().ifBlank {
         fallbackName.ifBlank {
@@ -166,11 +241,14 @@ data class ServerAccountDto(
       dnsttResolver = dnsttResolver.trim().ifBlank { ServerProfileEntity.DEFAULT_DNSTT_RESOLVER },
       vlessLink = vlessLink.trim(),
       vlessUuid = vlessUuid.trim(),
-      expiryDate = expiryDate.trim(),
+      expiryDate = effectiveExpiryDate,
       region = region.trim(),
       tags = tags.trim(),
       notes = notes.trim(),
       locked = locked,
+      isUserImported = false,
+      onlineCount = effectiveOnlineCount,
+      userLimit = effectiveUserLimit,
     )
   }
 

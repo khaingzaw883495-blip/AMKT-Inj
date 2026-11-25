@@ -19,6 +19,8 @@ data class NetworkConfigEntity(
   val httpProxyHost: String = "",
   val httpProxyPort: Int = DEFAULT_HTTP_PROXY_PORT,
   val locked: Boolean = false,
+  val isUserImported: Boolean = false,
+  val isFromRemote: Boolean = false,
   val createdAt: Long = System.currentTimeMillis(),
   val updatedAt: Long = System.currentTimeMillis(),
 ) {

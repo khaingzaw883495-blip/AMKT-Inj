@@ -3,6 +3,9 @@ package com.example.data
 import com.example.config.MyVpnConfigDto
 import com.example.config.NetworkConfigDto
 import com.example.config.ServerAccountDto
+import com.example.membership.OwnerBanner
+import com.example.membership.OwnerBannerNestedDto
+import com.example.membership.OwnerBannerPayloadDto
 import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 import com.squareup.moshi.Moshi
@@ -16,8 +19,8 @@ data class ServerListEnvelopeDto(
 )
 
 /**
- * Combined remote JSON envelope supporting both Milestone 7 split entries (`networks` + `servers`)
- * and legacy single-profile entries (`servers` / `profiles` / top-level array).
+ * Combined remote JSON envelope supporting both Milestone 7 split entries (`networks` + `servers`),
+ * optional owner announcement (`ads` / `own_ad` / `banner`), and legacy single-profile entries.
  */
 @JsonClass(generateAdapter = true)
 data class SplitRemoteEnvelopeDto(
@@ -27,6 +30,9 @@ data class SplitRemoteEnvelopeDto(
   @Json(name = "servers") val servers: List<SplitOrLegacyServerDto>? = null,
   @Json(name = "server") val server: SplitOrLegacyServerDto? = null,
   @Json(name = "profiles") val profiles: List<MyVpnConfigDto>? = null,
+  @Json(name = "ads") val ads: OwnerBannerNestedDto? = null,
+  @Json(name = "own_ad") val ownAd: OwnerBannerNestedDto? = null,
+  @Json(name = "banner") val banner: OwnerBannerNestedDto? = null,
 )
 
 /**
@@ -61,13 +67,32 @@ data class SplitOrLegacyServerDto(
   @Json(name = "vless_link") val vlessLink: String = "",
   @Json(name = "vless_uuid") val vlessUuid: String = "",
   @Json(name = "expiry_date") val expiryDate: String = "",
+  @Json(name = "expiry") val expiry: String = "",
+  @Json(name = "ovpn") val ovpn: String = "",
   @Json(name = "region") val region: String = "",
   @Json(name = "tags") val tags: String = "",
   @Json(name = "locked") val locked: Boolean = false,
   @Json(name = "notes") val notes: String = "",
   @Json(name = "network_name") val networkName: String = "",
+  @Json(name = "online") val online: Int? = null,
+  @Json(name = "online_users") val onlineUsers: Int? = null,
+  @Json(name = "online_count") val onlineCount: Int? = null,
+  @Json(name = "users_online") val usersOnline: Int? = null,
+  @Json(name = "active_users") val activeUsers: Int? = null,
+  @Json(name = "limit") val limit: Int? = null,
+  @Json(name = "max_users") val maxUsers: Int? = null,
+  @Json(name = "user_limit") val userLimit: Int? = null,
+  @Json(name = "max_online") val maxOnline: Int? = null,
+  @Json(name = "capacity") val capacity: Int? = null,
 ) {
+  fun isOpenVpnEntry(): Boolean {
+    if (ovpn.isNotBlank()) return true
+    val resolved = ConnectionMode.fromCode(connectionMode.ifBlank { mode })
+    return resolved == ConnectionMode.OPENVPN
+  }
+
   fun carriesEmbeddedLegacyNetwork(): Boolean {
+    if (isOpenVpnEntry()) return false
     val hasLegacyNetworkFields =
       payload.isNotBlank() ||
         payloadTemplate.isNotBlank() ||
@@ -107,7 +132,7 @@ data class SplitOrLegacyServerDto(
       dnsttPublicKey = dnsttPublicKey,
       dnsttResolver = dnsttResolver,
       vlessLink = vlessLink,
-      expiryDate = expiryDate,
+      expiryDate = expiryDate.ifBlank { expiry },
       locked = locked,
       notes = notes,
     )
@@ -129,11 +154,23 @@ data class SplitOrLegacyServerDto(
       vlessLink = vlessLink,
       vlessUuid = vlessUuid,
       expiryDate = expiryDate,
+      expiry = expiry,
+      ovpnBase64 = ovpn,
       region = region,
       tags = tags,
       notes = notes,
       locked = locked,
       networkName = networkName,
+      online = online,
+      onlineUsers = onlineUsers,
+      onlineCount = onlineCount,
+      usersOnline = usersOnline,
+      activeUsers = activeUsers,
+      limit = limit,
+      maxUsers = maxUsers,
+      userLimit = userLimit,
+      maxOnline = maxOnline,
+      capacity = capacity,
     )
 }
 
@@ -145,6 +182,9 @@ data class SplitRemoteListResult(
   val networkDtos: List<NetworkConfigDto>,
   val serverDtos: List<ServerAccountDto>,
   val legacyProfileDtos: List<MyVpnConfigDto>,
+  val ownerBanner: OwnerBanner? = null,
+  val hasNetworksSection: Boolean = networkDtos.isNotEmpty() || legacyProfileDtos.isNotEmpty(),
+  val hasServersSection: Boolean = serverDtos.isNotEmpty() || legacyProfileDtos.isNotEmpty(),
 ) {
   val isEmpty: Boolean
     get() = networkDtos.isEmpty() && serverDtos.isEmpty() && legacyProfileDtos.isEmpty()
@@ -226,6 +266,10 @@ class ServerListLoader {
             val servers = mutableListOf<ServerAccountDto>()
             val legacy = mutableListOf<MyVpnConfigDto>()
 
+            val explicitNetworksPresent = env?.networks != null || env?.network != null
+            val explicitServersPresent = env?.servers != null || env?.server != null
+            val explicitProfilesPresent = env?.profiles != null
+
             env?.networks?.let { networks.addAll(it) }
             env?.network?.let { networks.add(it) }
             env?.profiles?.let { legacy.addAll(it) }
@@ -235,13 +279,26 @@ class ServerListLoader {
             env?.server?.let { mixedEntries.add(it) }
 
             if (mixedEntries.isNotEmpty()) {
-              val classified = classifyMixedEntries(mixedEntries)
-              servers.addAll(classified.serverDtos)
-              legacy.addAll(classified.legacyProfileDtos)
+              if (explicitNetworksPresent) {
+                // Explicit split envelope ("networks" + "servers"): every entry under "servers"
+                // is strictly a Server and must NEVER fabricate a synthetic Network entry.
+                mixedEntries.forEach { entry -> servers.add(entry.toSplitServerDto()) }
+              } else {
+                val classified = classifyMixedEntries(mixedEntries)
+                servers.addAll(classified.serverDtos)
+                legacy.addAll(classified.legacyProfileDtos)
+              }
             }
 
             // If no envelope keys matched, try single Network or single Legacy/Server object
-            if (networks.isEmpty() && servers.isEmpty() && legacy.isEmpty()) {
+            if (
+              !explicitNetworksPresent &&
+                !explicitServersPresent &&
+                !explicitProfilesPresent &&
+                networks.isEmpty() &&
+                servers.isEmpty() &&
+                legacy.isEmpty()
+            ) {
               val singleNet = singleNetworkAdapter.fromJson(trimmed)
               val singleMixed = moshi.adapter(SplitOrLegacyServerDto::class.java).fromJson(trimmed)
               val hasServerIdentity =
@@ -250,7 +307,8 @@ class ServerListLoader {
                     singleMixed.sshHost.isNotBlank() ||
                     singleMixed.dnsttNameserver.isNotBlank() ||
                     singleMixed.vlessLink.isNotBlank() ||
-                    singleMixed.vlessUuid.isNotBlank())
+                    singleMixed.vlessUuid.isNotBlank() ||
+                    singleMixed.ovpn.isNotBlank())
               val hasNetworkOnlyIdentity =
                 !hasServerIdentity &&
                   singleNet != null &&
@@ -272,10 +330,21 @@ class ServerListLoader {
               }
             }
 
+            val parsedBanner =
+              OwnerBannerPayloadDto(
+                  nestedAds = env?.ads,
+                  nestedOwnAd = env?.ownAd,
+                  nestedBanner = env?.banner,
+                )
+                .resolve()
+
             SplitRemoteListResult(
               networkDtos = networks,
               serverDtos = servers,
               legacyProfileDtos = legacy,
+              ownerBanner = parsedBanner,
+              hasNetworksSection = explicitNetworksPresent || networks.isNotEmpty() || legacy.isNotEmpty(),
+              hasServersSection = explicitServersPresent || servers.isNotEmpty() || legacy.isNotEmpty(),
             )
           }
           else -> return Result.failure(IllegalArgumentException("JSON ဖော်မတ် မမှန်ကန်ပါ"))
@@ -284,6 +353,19 @@ class ServerListLoader {
       if (result.isEmpty) {
         return Result.failure(IllegalArgumentException("JSON အတွင်း ကွန်ရက် သို့မဟုတ် ဆာဗာ အချက်အလက် မတွေ့ပါ"))
       }
+
+      // Validate any OPENVPN remote entries up front so invalid base64/.ovpn fails cleanly
+      // without ever touching the local Room database.
+      for (srv in result.serverDtos) {
+        if (srv.inferServerConnectionMode() == ConnectionMode.OPENVPN && srv.ovpnBase64.isNotBlank()) {
+          val ovpnValidation = com.example.openvpn.OvpnConfigParser.decodeBase64Ovpn(srv.ovpnBase64)
+          if (ovpnValidation.isFailure) {
+            val msg = ovpnValidation.exceptionOrNull()?.message ?: "OpenVPN config ဖော်မတ် မမှန်ကန်ပါ"
+            return Result.failure(IllegalArgumentException(msg))
+          }
+        }
+      }
+
       Result.success(result)
     } catch (e: Exception) {
       Result.failure(

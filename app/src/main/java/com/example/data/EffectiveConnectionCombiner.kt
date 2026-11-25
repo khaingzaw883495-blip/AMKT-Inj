@@ -17,6 +17,33 @@ object EffectiveConnectionCombiner {
     network: NetworkConfigEntity,
     server: ServerAccountEntity,
   ): ServerProfileEntity {
+    if (server.isOpenVpnMode()) {
+      val networkPayloadMode = network.resolvedPayloadMode
+      return ServerProfileEntity(
+        id = server.id,
+        name = "${server.name} • ${network.name}",
+        mode = ConnectionMode.OPENVPN.code,
+        sshHost = "",
+        sshPort = 0,
+        username = server.username,
+        password = server.password,
+        payload = network.payloadTemplate,
+        proxyHost = network.httpProxyHost.trim(),
+        proxyPort = network.httpProxyPort.coerceIn(1, 65535),
+        sni = network.sniHost.trim(),
+        payloadMode = networkPayloadMode.code,
+        extraHeaders = network.extraHeaders,
+        expiryDate = server.expiryDate.trim(),
+        locked = server.locked || network.locked,
+        notes = server.notes.trim(),
+        isSelected = true,
+        ovpnConfigEncrypted = server.ovpnConfigEncrypted,
+        ovpnAuthRequired = server.ovpnAuthRequired,
+        createdAt = server.createdAt,
+        updatedAt = maxOf(server.updatedAt, network.updatedAt),
+      )
+    }
+
     val networkPayloadMode = network.resolvedPayloadMode
     val effectiveMode =
       when {
@@ -56,8 +83,34 @@ object EffectiveConnectionCombiner {
       locked = server.locked || network.locked,
       notes = server.notes.trim(),
       isSelected = true,
+      ovpnConfigEncrypted = server.ovpnConfigEncrypted,
+      ovpnAuthRequired = server.ovpnAuthRequired,
       createdAt = server.createdAt,
       updatedAt = maxOf(server.updatedAt, network.updatedAt),
+    )
+  }
+
+  /**
+   * Produces a standalone runtime profile for an OpenVPN server (which carries its own transport
+   * settings inside its encrypted `.ovpn` config and does not require a Network selection).
+   */
+  fun fromOpenVpnServer(server: ServerAccountEntity): ServerProfileEntity {
+    return ServerProfileEntity(
+      id = server.id,
+      name = server.name,
+      mode = ConnectionMode.OPENVPN.code,
+      sshHost = "",
+      sshPort = 0,
+      username = server.username,
+      password = server.password,
+      expiryDate = server.expiryDate.trim(),
+      locked = server.locked,
+      notes = server.notes.trim(),
+      isSelected = true,
+      ovpnConfigEncrypted = server.ovpnConfigEncrypted,
+      ovpnAuthRequired = server.ovpnAuthRequired,
+      createdAt = server.createdAt,
+      updatedAt = server.updatedAt,
     )
   }
 

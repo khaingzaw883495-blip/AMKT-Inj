@@ -374,9 +374,8 @@ class UpdateServersRefreshTest {
       val fb1 = stack.viewModel.remoteSyncFeedback.value
       assertNotNull(fb1)
       assertFalse("Expected success feedback, got ${fb1?.message}", fb1!!.isError)
-      assertTrue(fb1.message.contains("အသစ် 1"))
-      assertTrue(fb1.message.contains("အပ်ဒိတ် 1"))
-      assertEquals(fb1.message, stack.viewModel.snackbarMessage.value)
+      assertEquals("Update Finished", fb1.message)
+      assertEquals("Update Finished", stack.viewModel.snackbarMessage.value)
 
       val nets = stack.splitRepo.getAllNetworksSnapshot()
       val srvs = stack.splitRepo.getAllServersSnapshot()

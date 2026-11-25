@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,14 +29,17 @@ import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.ConfirmationNumber
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.MoreTime
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -71,11 +75,14 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.BuildConfig
 import com.example.R
+import com.example.ads.FreeTimeStatus
 import com.example.data.NetworkConfigEntity
 import com.example.data.ServerAccountEntity
 import com.example.data.ServerPingChecker
 import com.example.membership.OwnerBanner
 import com.example.ui.RemoteSyncFeedback
+import com.example.ui.ads.Adsterra320x50BannerSlot
+import com.example.ui.ads.BottomSmartlinkBannerCard
 import com.example.ui.theme.DisplayFontFamily
 import com.example.ui.theme.MonoFontFamily
 import com.example.vpn.AmktVpnService
@@ -105,6 +112,12 @@ fun HomeScreen(
   onRefreshServersClick: () -> Unit = {},
   onDismissRemoteSyncFeedback: () -> Unit = {},
   onOpenBannerLink: (String) -> Unit = {},
+  onClearNetwork: (() -> Unit)? = null,
+  showAdsterraBanners: Boolean = true,
+  freeTimeStatus: FreeTimeStatus? = null,
+  hasValidNoAdsPass: Boolean = false,
+  nowEpochMsProvider: () -> Long = { System.currentTimeMillis() },
+  onExtendTimeClick: () -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
   var showNetworkSheet by remember { mutableStateOf(false) }
@@ -123,6 +136,13 @@ fun HomeScreen(
         onOpenNetworksClick()
       },
       onDismiss = { showNetworkSheet = false },
+      onClearNetwork =
+        onClearNetwork?.let { clearFn ->
+          {
+            clearFn()
+            showNetworkSheet = false
+          }
+        },
     )
   }
 
@@ -170,13 +190,17 @@ fun HomeScreen(
     }
   }
 
-  // Live 1-second clock for the selected server's HH:MM:SS remaining-time countdown
-  var nowEpochMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
-  LaunchedEffect(selectedServer?.expiryDate) {
-    if (!selectedServer?.expiryDate.isNullOrBlank()) {
+  // Live 1-second clock for the selected server's HH:MM:SS remaining-time / free-time countdown
+  var nowEpochMs by remember { mutableLongStateOf(nowEpochMsProvider()) }
+  val shouldTickClock =
+    !selectedServer?.expiryDate.isNullOrBlank() ||
+      (freeTimeStatus != null && freeTimeStatus.initialized && !hasValidNoAdsPass && selectedServer?.isRedeemedServer() != true)
+  LaunchedEffect(shouldTickClock, selectedServer?.expiryDate, freeTimeStatus?.expiresAtMs) {
+    nowEpochMs = nowEpochMsProvider()
+    if (shouldTickClock) {
       while (true) {
-        nowEpochMs = System.currentTimeMillis()
         delay(1_000L)
+        nowEpochMs = nowEpochMsProvider()
       }
     }
   }
@@ -204,8 +228,11 @@ fun HomeScreen(
           selectedServer = selectedServer,
           vpnState = vpnState,
           nowEpochMs = nowEpochMs,
+          freeTimeStatus = freeTimeStatus,
+          hasValidNoAdsPass = hasValidNoAdsPass,
           onOpenNetworkPicker = { showNetworkSheet = true },
           onOpenServerPicker = { showServerSheet = true },
+          onExtendTimeClick = onExtendTimeClick,
           onConnectClick = onConnectClick,
         )
       }
@@ -290,14 +317,27 @@ fun HomeScreen(
         }
       }
 
-      // 7. Owner Announcement Banner (only when configured)
-      if (ownerBanner != null) {
+      // 7. Owner Announcement Banner (from Remote JSON "ads" section, or built-in AMKT Telegram fallback)
+      item {
+        OwnerBannerCard(
+          banner = ownerBanner,
+          onOpenLink = {
+            val targetUrl = ownerBanner?.effectiveLinkUrl() ?: OwnerBanner.DEFAULT_TELEGRAM_URL
+            onOpenBannerLink(targetUrl)
+          },
+        )
+      }
+
+      // 8. Bottom Adsterra Smartlink_2 banner + 320x50 banner (hidden when stored no-ads code is valid)
+      if (showAdsterraBanners) {
         item {
-          OwnerBannerCard(
-            banner = ownerBanner,
-            onOpenLink = {
-              if (ownerBanner.linkUrl.isNotBlank()) onOpenBannerLink(ownerBanner.linkUrl)
-            },
+          BottomSmartlinkBannerCard(
+            onOpenSmartlink = { url -> onOpenBannerLink(url) },
+          )
+        }
+        item {
+          Adsterra320x50BannerSlot(
+            onOpenExternalUrl = { url -> onOpenBannerLink(url) },
           )
         }
       }
@@ -427,8 +467,11 @@ private fun UnifiedConnectionCard(
   selectedServer: ServerAccountEntity?,
   vpnState: VpnTunnelState,
   nowEpochMs: Long,
+  freeTimeStatus: FreeTimeStatus?,
+  hasValidNoAdsPass: Boolean,
   onOpenNetworkPicker: () -> Unit,
   onOpenServerPicker: () -> Unit,
+  onExtendTimeClick: () -> Unit,
   onConnectClick: () -> Unit,
 ) {
   val isConnecting = vpnState is VpnTunnelState.Connecting || vpnState is VpnTunnelState.Reconnecting
@@ -466,13 +509,30 @@ private fun UnifiedConnectionCard(
     remember(selectedServer?.expiryDate) {
       ServerPingChecker.formatRemainingExpiry(selectedServer?.expiryDate.orEmpty())
     }
-  val (countdownHms, isCountdownExpired) =
+  val (expiryCountdownHms, isExpiryCountdownExpired) =
     remember(selectedServer?.expiryDate, nowEpochMs) {
       ServerPingChecker.formatExpiryCountdownHms(
         expiryDate = selectedServer?.expiryDate.orEmpty(),
         nowMs = nowEpochMs,
       )
     }
+
+  val activeFreeTime =
+    if (
+      freeTimeStatus != null &&
+        !hasValidNoAdsPass &&
+        selectedServer != null &&
+        !selectedServer.isRedeemedServer()
+    ) {
+      freeTimeStatus
+    } else {
+      null
+    }
+
+  val resolvedServerSubtitle = activeFreeTime?.formatSummaryLine(nowEpochMs) ?: serverExpirySubtitle
+  val isSubtitleError = activeFreeTime?.isExpired(nowEpochMs) ?: isServerExpired
+  val countdownHms = activeFreeTime?.formatRemainingHms(nowEpochMs) ?: expiryCountdownHms
+  val isCountdownExpired = activeFreeTime?.isExpired(nowEpochMs) ?: isExpiryCountdownExpired
 
   Card(
     shape = RoundedCornerShape(24.dp),
@@ -558,24 +618,62 @@ private fun UnifiedConnectionCard(
           }
         }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-          Text(
-            text = stringResource(R.string.home_server_label),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-          Text(
-            text = selectedServer?.name ?: stringResource(R.string.status_no_server),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-          )
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+          ) {
+            Text(
+              text = stringResource(R.string.home_server_label),
+              style = MaterialTheme.typography.labelSmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (selectedServer != null) {
+              Text(
+                text = selectedServer.formatOnlineLimitLabel(),
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = MonoFontFamily,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.testTag("home_server_online_limit_line"),
+              )
+            }
+          }
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            Text(
+              text = selectedServer?.name ?: stringResource(R.string.status_no_server),
+              style = MaterialTheme.typography.titleMedium,
+              fontWeight = FontWeight.Bold,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+              modifier = Modifier.weight(1f, fill = false),
+            )
+            if (selectedServer?.isOpenVpnMode() == true) {
+              Surface(
+                shape = RoundedCornerShape(999.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                modifier = Modifier.testTag("home_server_openvpn_badge"),
+              ) {
+                Text(
+                  text = stringResource(R.string.badge_openvpn),
+                  style = MaterialTheme.typography.labelSmall,
+                  color = MaterialTheme.colorScheme.onSecondaryContainer,
+                  fontWeight = FontWeight.SemiBold,
+                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                )
+              }
+            }
+          }
           if (selectedServer != null) {
             Text(
-              text = serverExpirySubtitle,
+              text = resolvedServerSubtitle,
               style = MaterialTheme.typography.bodySmall,
               color =
-                if (isServerExpired) MaterialTheme.colorScheme.error
+                if (isSubtitleError) MaterialTheme.colorScheme.error
                 else MaterialTheme.colorScheme.primary,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
@@ -592,47 +690,102 @@ private fun UnifiedConnectionCard(
 
       HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-      // Row 3: Remaining time row (Clock icon + "Remaining time" + HH:MM:SS countdown, read-only, NO AddTime button)
-      Row(
-        modifier =
-          Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 14.dp)
-            .testTag("home_remaining_time_row"),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-      ) {
-        Surface(
-          shape = RoundedCornerShape(12.dp),
-          color = MaterialTheme.colorScheme.secondaryContainer,
-          modifier = Modifier.size(44.dp),
+      // Row 3: Remaining time row (Clock icon + "Remaining time" + HH:MM:SS countdown + Extend Time button)
+      val showExtendTimeButton =
+        freeTimeStatus != null && !hasValidNoAdsPass && selectedServer?.isRedeemedServer() != true
+      val canExtendToday = freeTimeStatus?.canWatchAdForGrant() == true
+      val remainingGrantsToday = freeTimeStatus?.remainingGrantsToday() ?: 0
+
+      Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+          modifier =
+            Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 16.dp, vertical = 12.dp)
+              .testTag("home_remaining_time_row"),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-          Box(contentAlignment = Alignment.Center) {
-            Icon(
-              imageVector = Icons.Default.Schedule,
-              contentDescription = null,
-              tint = MaterialTheme.colorScheme.onSecondaryContainer,
-              modifier = Modifier.size(22.dp),
+          Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            modifier = Modifier.size(44.dp),
+          ) {
+            Box(contentAlignment = Alignment.Center) {
+              Icon(
+                imageVector = Icons.Default.Schedule,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.size(22.dp),
+              )
+            }
+          }
+          Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+              text = stringResource(R.string.home_remaining_time_label),
+              style = MaterialTheme.typography.labelSmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+              text = countdownHms,
+              style = MaterialTheme.typography.titleLarge,
+              fontFamily = MonoFontFamily,
+              fontWeight = FontWeight.Bold,
+              color =
+                if (isCountdownExpired || isServerExpired) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.onSurface,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+              modifier = Modifier.testTag("home_remaining_time_value"),
             )
           }
+          if (showExtendTimeButton) {
+            FilledTonalButton(
+              onClick = onExtendTimeClick,
+              enabled = canExtendToday,
+              shape = RoundedCornerShape(14.dp),
+              contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+              colors =
+                ButtonDefaults.filledTonalButtonColors(
+                  containerColor = MaterialTheme.colorScheme.primaryContainer,
+                  contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                  disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                  disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                ),
+              modifier = Modifier.defaultMinSize(minHeight = 48.dp).testTag("home_extend_time_button"),
+            ) {
+              Icon(
+                imageVector = Icons.Default.MoreTime,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+              )
+              Spacer(Modifier.width(6.dp))
+              Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text(
+                  text = stringResource(R.string.home_extend_time_cta),
+                  style = MaterialTheme.typography.labelMedium,
+                  fontWeight = FontWeight.Bold,
+                  maxLines = 1,
+                )
+                Text(
+                  text = stringResource(R.string.home_extend_grants_left_format, remainingGrantsToday),
+                  style = MaterialTheme.typography.labelSmall,
+                  maxLines = 1,
+                  modifier = Modifier.testTag("home_extend_grants_left_text"),
+                )
+              }
+            }
+          }
         }
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        if (showExtendTimeButton && !canExtendToday) {
           Text(
-            text = stringResource(R.string.home_remaining_time_label),
+            text = stringResource(R.string.home_extend_limit_used_message),
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-          Text(
-            text = countdownHms,
-            style = MaterialTheme.typography.titleLarge,
-            fontFamily = MonoFontFamily,
-            fontWeight = FontWeight.Bold,
-            color =
-              if (isCountdownExpired || isServerExpired) MaterialTheme.colorScheme.error
-              else MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.testTag("home_remaining_time_value"),
+            color = MaterialTheme.colorScheme.error,
+            modifier =
+              Modifier
+                .padding(start = 16.dp, end = 16.dp, bottom = 10.dp)
+                .testTag("home_extend_limit_message"),
           )
         }
       }
@@ -837,39 +990,57 @@ private fun CompactAlertCard(
 
 @Composable
 private fun OwnerBannerCard(
-  banner: OwnerBanner,
+  banner: OwnerBanner?,
   onOpenLink: () -> Unit,
 ) {
+  val remoteImageUrl = banner?.let { OwnerBanner.sanitizeHttpUrl(it.imageUrl) }.orEmpty()
+  var remoteImageFailed by remember(remoteImageUrl) { mutableStateOf(false) }
+  val showRemoteImage = remoteImageUrl.isNotBlank() && !remoteImageFailed
+  val fallbackTitle = stringResource(R.string.owner_banner_fallback_title)
+  val fallbackSubtitle = stringResource(R.string.owner_banner_fallback_subtitle)
+  val resolvedTitle = banner?.title?.takeIf { it.isNotBlank() } ?: fallbackTitle
+  val resolvedSubtitle =
+    banner?.subtitle?.takeIf { it.isNotBlank() }
+      ?: banner?.effectiveLinkUrl()?.takeIf { banner.linkUrl.isNotBlank() }
+      ?: fallbackSubtitle
+
   Card(
     shape = RoundedCornerShape(18.dp),
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
-    modifier = Modifier.fillMaxWidth().clickable(enabled = banner.linkUrl.isNotBlank(), onClick = onOpenLink),
+    modifier =
+      Modifier
+        .fillMaxWidth()
+        .clickable(onClick = onOpenLink)
+        .testTag("home_owner_banner_card"),
   ) {
     Column {
-      if (banner.imageUrl.isNotBlank()) {
+      if (showRemoteImage) {
         AsyncImage(
-          model = banner.imageUrl,
+          model = remoteImageUrl,
           contentDescription = stringResource(R.string.cd_owner_banner),
           contentScale = ContentScale.Crop,
-          modifier = Modifier.fillMaxWidth().height(110.dp),
+          onError = { remoteImageFailed = true },
+          modifier =
+            Modifier
+              .fillMaxWidth()
+              .height(104.dp)
+              .testTag("home_owner_banner_remote_image"),
         )
-      }
-      if (banner.title.isNotBlank() || banner.linkUrl.isNotBlank()) {
-        Row(
-          modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-          Text(
-            text = banner.title.ifBlank { banner.linkUrl },
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-          )
-          if (banner.linkUrl.isNotBlank()) {
+        if (!banner?.title.isNullOrBlank() || !banner?.linkUrl.isNullOrBlank()) {
+          Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+          ) {
+            Text(
+              text = banner.title.ifBlank { banner.effectiveLinkUrl() },
+              style = MaterialTheme.typography.bodySmall,
+              fontWeight = FontWeight.Medium,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+              modifier = Modifier.weight(1f),
+            )
             Icon(
               imageVector = Icons.AutoMirrored.Filled.OpenInNew,
               contentDescription = null,
@@ -877,6 +1048,47 @@ private fun OwnerBannerCard(
               modifier = Modifier.size(16.dp),
             )
           }
+        }
+      } else {
+        // Built-in fallback card (never displays a broken image) linking to AMKT Telegram or remote link
+        Row(
+          modifier =
+            Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 14.dp, vertical = 12.dp)
+              .testTag("home_owner_banner_fallback"),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+          Image(
+            painter = painterResource(id = R.drawable.app_icon_amkt_1795171749485),
+            contentDescription = stringResource(R.string.cd_owner_banner),
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)),
+          )
+          Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+              text = resolvedTitle,
+              style = MaterialTheme.typography.titleSmall,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.onSurface,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+              text = resolvedSubtitle,
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+          Icon(
+            imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp),
+          )
         }
       }
     }

@@ -1,5 +1,6 @@
 package com.example.membership
 
+import com.example.data.ProfileExpiryChecker
 import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 
@@ -25,28 +26,31 @@ data class OwnerBannerPayloadDto(
   @Json(name = "url") val urlFallback: String = "",
   @Json(name = "title") val title: String = "",
   @Json(name = "subtitle") val subtitle: String = "",
+  @Json(name = "ads") val nestedAds: OwnerBannerNestedDto? = null,
   @Json(name = "own_ad") val nestedOwnAd: OwnerBannerNestedDto? = null,
   @Json(name = "banner") val nestedBanner: OwnerBannerNestedDto? = null,
 ) {
   fun resolve(): OwnerBanner? {
-    val nested = nestedOwnAd ?: nestedBanner
+    val nested = nestedAds ?: nestedOwnAd ?: nestedBanner
     val resolvedImage =
-      listOf(imageUrl, imageFallback, nested?.imageUrl.orEmpty(), nested?.imageFallback.orEmpty())
-        .firstOrNull { it.isNotBlank() }
-        .orEmpty()
-        .trim()
+      OwnerBanner.sanitizeHttpUrl(
+        listOf(imageUrl, imageFallback, nested?.imageUrl.orEmpty(), nested?.imageFallback.orEmpty())
+          .firstOrNull { it.isNotBlank() }
+          .orEmpty()
+      )
     val resolvedLink =
-      listOf(
-          linkUrl,
-          linkFallback,
-          urlFallback,
-          nested?.linkUrl.orEmpty(),
-          nested?.linkFallback.orEmpty(),
-          nested?.urlFallback.orEmpty(),
-        )
-        .firstOrNull { it.isNotBlank() }
-        .orEmpty()
-        .trim()
+      OwnerBanner.sanitizeHttpUrl(
+        listOf(
+            linkUrl,
+            linkFallback,
+            urlFallback,
+            nested?.linkUrl.orEmpty(),
+            nested?.linkFallback.orEmpty(),
+            nested?.urlFallback.orEmpty(),
+          )
+          .firstOrNull { it.isNotBlank() }
+          .orEmpty()
+      )
     val resolvedTitle = title.ifBlank { nested?.title.orEmpty() }.trim()
     val resolvedSubtitle = subtitle.ifBlank { nested?.subtitle.orEmpty() }.trim()
 
@@ -76,7 +80,25 @@ data class OwnerBanner(
   val linkUrl: String,
   val title: String = "",
   val subtitle: String = "",
-)
+) {
+  fun effectiveLinkUrl(): String =
+    sanitizeHttpUrl(linkUrl).ifBlank { DEFAULT_TELEGRAM_URL }
+
+  companion object {
+    const val DEFAULT_TELEGRAM_URL = "https://t.me/amktvpn"
+
+    /**
+     * Allows strictly http:// and https:// URLs so untrusted schemes (javascript:, data:, file:,
+     * intent:) from remote JSON can never be opened or rendered.
+     */
+    fun sanitizeHttpUrl(raw: String): String {
+      val trimmed = raw.trim()
+      if (trimmed.isEmpty()) return ""
+      val lower = trimmed.lowercase()
+      return if (lower.startsWith("https://") || lower.startsWith("http://")) trimmed else ""
+    }
+  }
+}
 
 data class PassStatus(
   val isActive: Boolean = false,
@@ -85,6 +107,13 @@ data class PassStatus(
   val message: String = "",
   val deviceId: String = "",
 ) {
+  fun isCurrentlyValid(todayYmd: Int = ProfileExpiryChecker.currentLocalYmd()): Boolean {
+    if (!isActive) return false
+    val exp = expiresAt.trim()
+    if (exp.isBlank()) return true
+    return !ProfileExpiryChecker.isExpired(exp, todayYmd)
+  }
+
   fun maskedCode(): String {
     val clean = code.trim()
     if (clean.length <= 4) return clean

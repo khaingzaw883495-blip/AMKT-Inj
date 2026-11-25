@@ -8,6 +8,7 @@ import android.net.Uri
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
+import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -34,6 +35,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -55,12 +57,16 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.ads.AdsterraConfig
+import com.example.ads.ConnectGateDecision
 import com.example.data.NetworkConfigEntity
 import com.example.data.ServerAccountEntity
 import com.example.data.ServerProfileEntity
 import com.example.ui.AmktViewModel
+import com.example.ui.ads.ConnectAdGateDialog
 import com.example.ui.home.HomeScreen
 import com.example.ui.networks.NetworksScreen
+import com.example.ui.profiles.OvpnAuthCredentialsDialog
 import com.example.ui.profiles.ServersScreen
 import com.example.ui.redeem.RedeemCodeScreen
 import com.example.ui.settings.SettingsScreen
@@ -87,10 +93,30 @@ private val topLevelDestinations =
   )
 
 private data class PendingCombinedVpnRequest(
-  val network: NetworkConfigEntity,
+  val network: NetworkConfigEntity?,
   val server: ServerAccountEntity,
   val effectiveProfile: ServerProfileEntity,
 )
+
+private sealed interface PendingAdGateTask {
+  val serverName: String
+  val isTimeExtensionGrant: Boolean
+
+  data class ConnectVpn(
+    val request: PendingCombinedVpnRequest,
+    val decision: ConnectGateDecision,
+  ) : PendingAdGateTask {
+    override val serverName: String = request.server.name
+    override val isTimeExtensionGrant: Boolean =
+      decision == ConnectGateDecision.ShowGateAndGrantExtension
+  }
+
+  data class ExtendTimeOnly(
+    override val serverName: String,
+  ) : PendingAdGateTask {
+    override val isTimeExtensionGrant: Boolean = true
+  }
+}
 
 class MainActivity : ComponentActivity() {
   private val viewModel: AmktViewModel by viewModels {
@@ -120,7 +146,11 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-internal fun AmktInjectorApp(viewModel: AmktViewModel) {
+internal fun AmktInjectorApp(
+  viewModel: AmktViewModel,
+  adGateTickIntervalMs: Long = 1_000L,
+  adGateOpenBrowserOverride: ((String) -> Boolean)? = null,
+) {
   val context = LocalContext.current
   val navController = rememberNavController()
   val snackbarHostState = remember { SnackbarHostState() }
@@ -133,15 +163,40 @@ internal fun AmktInjectorApp(viewModel: AmktViewModel) {
   val vpnTrafficStats by viewModel.vpnTrafficStats.collectAsStateWithLifecycle()
   val vpnSettings by viewModel.vpnSettings.collectAsStateWithLifecycle()
   val ownerBanner by viewModel.ownerBanner.collectAsStateWithLifecycle()
+  val hasValidNoAdsPass by viewModel.hasValidNoAdsPass.collectAsStateWithLifecycle()
+  val freeTimeStatus by viewModel.freeTimeStatus.collectAsStateWithLifecycle()
   val isFetchingRemoteServers by viewModel.isFetchingRemoteServers.collectAsStateWithLifecycle()
   val remoteSyncFeedback by viewModel.remoteSyncFeedback.collectAsStateWithLifecycle()
   val isRedeemingCode by viewModel.isRedeemingCode.collectAsStateWithLifecycle()
   val redeemOutcome by viewModel.redeemOutcome.collectAsStateWithLifecycle()
   val snackbarMessage by viewModel.snackbarMessage.collectAsStateWithLifecycle()
   val isDarkTheme by viewModel.isDarkTheme.collectAsStateWithLifecycle()
+  val pendingOvpnAuthImport by viewModel.pendingOvpnAuthImport.collectAsStateWithLifecycle()
 
   var pendingVpnRequest by remember { mutableStateOf<PendingCombinedVpnRequest?>(null) }
+  var pendingAdGateTask by remember { mutableStateOf<PendingAdGateTask?>(null) }
   var askedNotificationPermission by remember { mutableStateOf(false) }
+
+  val ovpnImportLauncher =
+    rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+      if (uri == null) return@rememberLauncherForActivityResult
+      try {
+        val displayName =
+          context.contentResolver
+            .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { cursor ->
+              if (cursor.moveToFirst()) cursor.getString(0) else null
+            } ?: uri.lastPathSegment
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        if (bytes == null || bytes.isEmpty()) {
+          viewModel.notifyMessage(".ovpn ဖိုင် ဗလာဖြစ်နေပါသည်")
+        } else {
+          viewModel.beginOvpnFileImport(rawBytes = bytes, fileName = displayName)
+        }
+      } catch (_: Exception) {
+        viewModel.notifyMessage(".ovpn ဖိုင် ဖတ်မရပါ")
+      }
+    }
 
   val notificationPermissionLauncher =
     rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { _ ->
@@ -163,9 +218,15 @@ internal fun AmktInjectorApp(viewModel: AmktViewModel) {
       }
     }
 
-  fun launchVpnConnectFlow() {
-    val validated = viewModel.validateSelectionForVpnConnect() ?: return
-    val (net, srv, combined) = validated
+  pendingOvpnAuthImport?.let { pending ->
+    OvpnAuthCredentialsDialog(
+      profileName = pending.suggestedName,
+      onConfirm = { user, pass -> viewModel.completePendingOvpnAuthImport(user, pass) },
+      onDismiss = { viewModel.cancelPendingOvpnAuthImport() },
+    )
+  }
+
+  fun proceedWithVpnPermissionAndStart(request: PendingCombinedVpnRequest) {
     if (
       Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
         !askedNotificationPermission &&
@@ -176,18 +237,117 @@ internal fun AmktInjectorApp(viewModel: AmktViewModel) {
       notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
-    val consentIntent = VpnService.prepare(context)
+    val consentIntent = viewModel.prepareVpnPermissionIntent(context)
     if (consentIntent != null) {
-      pendingVpnRequest = PendingCombinedVpnRequest(net, srv, combined)
+      pendingVpnRequest = request
       vpnConsentLauncher.launch(consentIntent)
     } else {
-      viewModel.startCombinedVpnAfterConsent(net, srv, combined)
+      viewModel.startCombinedVpnAfterConsent(
+        network = request.network,
+        server = request.server,
+        effectiveProfile = request.effectiveProfile,
+      )
     }
+  }
+
+  fun openExternalHttpUrl(url: String): Boolean {
+    if (!AdsterraConfig.isAllowedWebViewUrl(url)) return false
+    return runCatching {
+      val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+      context.startActivity(intent)
+      true
+    }.getOrDefault(false)
+  }
+
+  pendingAdGateTask?.let { gateTask ->
+    ConnectAdGateDialog(
+      serverName = gateTask.serverName,
+      isTimeExtensionGrant = gateTask.isTimeExtensionGrant,
+      tickIntervalMs = adGateTickIntervalMs,
+      onOpenExternalBrowser = { url ->
+        adGateOpenBrowserOverride?.invoke(url) ?: openExternalHttpUrl(url)
+      },
+      onCountdownFinished = {
+        pendingAdGateTask = null
+        when (gateTask) {
+          is PendingAdGateTask.ConnectVpn -> {
+            when (gateTask.decision) {
+              ConnectGateDecision.ShowGateAndGrantInitialFree -> {
+                viewModel.completeInitialFreeConnectGate {
+                  proceedWithVpnPermissionAndStart(gateTask.request)
+                }
+              }
+              ConnectGateDecision.ShowGateAndConnect -> {
+                viewModel.recordConnectGateCompleted()
+                proceedWithVpnPermissionAndStart(gateTask.request)
+              }
+              ConnectGateDecision.ShowGateAndGrantExtension -> {
+                viewModel.completeAdGateGrant(showSuccessSnackbar = false) { granted ->
+                  if (granted) {
+                    proceedWithVpnPermissionAndStart(gateTask.request)
+                  }
+                }
+              }
+              ConnectGateDecision.SkipUnlimited,
+              ConnectGateDecision.RefuseFreeTimeExpiredNoGrantsLeft -> Unit
+            }
+          }
+          is PendingAdGateTask.ExtendTimeOnly -> {
+            viewModel.completeAdGateGrant(showSuccessSnackbar = true)
+          }
+        }
+      },
+    )
+  }
+
+  fun launchVpnConnectFlow() {
+    if (pendingAdGateTask != null) return
+    val validated = viewModel.validateSelectionForVpnConnect() ?: return
+    val request =
+      PendingCombinedVpnRequest(
+        network = validated.first,
+        server = validated.second,
+        effectiveProfile = validated.third,
+      )
+    viewModel.resolveConnectDecision(request.server) { decision ->
+      when (decision) {
+        ConnectGateDecision.SkipUnlimited -> {
+          proceedWithVpnPermissionAndStart(request)
+        }
+        ConnectGateDecision.ShowGateAndGrantInitialFree,
+        ConnectGateDecision.ShowGateAndConnect,
+        ConnectGateDecision.ShowGateAndGrantExtension -> {
+          pendingAdGateTask = PendingAdGateTask.ConnectVpn(request = request, decision = decision)
+        }
+        ConnectGateDecision.RefuseFreeTimeExpiredNoGrantsLeft -> {
+          viewModel.notifyMessage(context.getString(R.string.free_time_daily_limit_reached))
+        }
+      }
+    }
+  }
+
+  fun launchExtendTimeFlow() {
+    if (pendingAdGateTask != null) return
+    if (hasValidNoAdsPass || selectedServer?.isRedeemedServer() == true) return
+    if (!freeTimeStatus.canWatchAdForGrant()) {
+      viewModel.notifyMessage(context.getString(R.string.free_time_daily_limit_reached))
+      return
+    }
+    pendingAdGateTask =
+      PendingAdGateTask.ExtendTimeOnly(
+        serverName = selectedServer?.name ?: context.getString(R.string.app_name),
+      )
   }
 
   LaunchedEffect(snackbarMessage) {
     snackbarMessage?.let { msg ->
-      snackbarHostState.showSnackbar(msg)
+      snackbarHostState.showSnackbar(
+        message = msg,
+        actionLabel = context.getString(R.string.cd_close),
+        duration = SnackbarDuration.Long,
+      )
       viewModel.clearSnackbar()
     }
   }
@@ -345,6 +505,12 @@ internal fun AmktInjectorApp(viewModel: AmktViewModel) {
                   viewModel.notifyMessage("လင့်ခ်ဖွင့်မရပါ")
                 }
               },
+              onClearNetwork = viewModel::clearSelectedNetwork,
+              showAdsterraBanners = !hasValidNoAdsPass,
+              freeTimeStatus = freeTimeStatus,
+              hasValidNoAdsPass = hasValidNoAdsPass,
+              nowEpochMsProvider = viewModel::currentEpochMs,
+              onExtendTimeClick = { launchExtendTimeFlow() },
             )
           }
 
@@ -365,6 +531,17 @@ internal fun AmktInjectorApp(viewModel: AmktViewModel) {
               onSelectServer = viewModel::selectServer,
               onSyncRemoteClick = { triggerRemoteUpdate() },
               isUpdating = isFetchingRemoteServers,
+              onImportOvpnClick = {
+                ovpnImportLauncher.launch(
+                  arrayOf(
+                    "application/x-openvpn-profile",
+                    "application/octet-stream",
+                    "text/plain",
+                    "*/*",
+                  )
+                )
+              },
+              onDeleteImportedServer = viewModel::deleteUserImportedServer,
             )
           }
 

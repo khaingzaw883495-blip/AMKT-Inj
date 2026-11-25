@@ -20,6 +20,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.Lan
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
@@ -28,7 +30,9 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -44,10 +48,12 @@ import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.ServerAccountEntity
 import com.example.data.ServerPingChecker
+import com.example.ui.theme.MonoFontFamily
 
 /**
- * Locked-down Servers list: shows flag emoji + Server name + read-only expiry line to select,
- * plus an Update button to fetch the Remote JSON list. No Add, Import, Edit, Export, or Delete.
+ * Locked-down Servers list: shows flag emoji + Server name (+ small OpenVPN badge for OpenVPN
+ * profiles) + read-only expiry line to select, plus Update (Remote JSON) and Import .ovpn actions.
+ * Remote servers can never be edited or deleted; only user-imported .ovpn profiles may be deleted.
  */
 @Composable
 fun ServersScreen(
@@ -56,55 +62,85 @@ fun ServersScreen(
   onSelectServer: (ServerAccountEntity) -> Unit,
   onSyncRemoteClick: () -> Unit,
   isUpdating: Boolean = false,
+  onImportOvpnClick: () -> Unit = {},
+  onDeleteImportedServer: (ServerAccountEntity) -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
   Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
     Column(modifier = Modifier.fillMaxWidth().widthIn(max = 640.dp).fillMaxSize()) {
-      Row(
+      Column(
         modifier =
           Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
       ) {
-        Column(modifier = Modifier.weight(1f)) {
-          Text(
-            text = stringResource(R.string.servers_title),
-            style = MaterialTheme.typography.headlineSmall,
-          )
-          Text(
-            text = stringResource(R.string.servers_subtitle),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-        }
-
-        FilledTonalButton(
-          onClick = onSyncRemoteClick,
-          enabled = !isUpdating,
-          shape = RoundedCornerShape(999.dp),
-          contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-          modifier = Modifier.testTag("servers_remote_sync_button"),
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
         ) {
-          if (isUpdating) {
-            CircularProgressIndicator(
-              modifier = Modifier.size(16.dp),
-              strokeWidth = 2.dp,
-              color = MaterialTheme.colorScheme.primary,
+          Column(modifier = Modifier.weight(1f)) {
+            Text(
+              text = stringResource(R.string.servers_title),
+              style = MaterialTheme.typography.headlineSmall,
             )
-          } else {
-            Icon(
-              imageVector = Icons.Default.Refresh,
-              contentDescription = stringResource(R.string.cd_refresh_servers),
-              modifier = Modifier.size(17.dp),
+            Text(
+              text = stringResource(R.string.servers_subtitle),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
           }
-          Spacer(Modifier.width(6.dp))
-          Text(
-            text =
-              if (isUpdating) stringResource(R.string.action_updating_servers)
-              else stringResource(R.string.action_update_servers),
-            style = MaterialTheme.typography.labelLarge,
-          )
+
+          FilledTonalButton(
+            onClick = onSyncRemoteClick,
+            enabled = !isUpdating,
+            shape = RoundedCornerShape(999.dp),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+            modifier = Modifier.testTag("servers_remote_sync_button"),
+          ) {
+            if (isUpdating) {
+              CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.primary,
+              )
+            } else {
+              Icon(
+                imageVector = Icons.Default.Refresh,
+                contentDescription = stringResource(R.string.cd_refresh_servers),
+                modifier = Modifier.size(17.dp),
+              )
+            }
+            Spacer(Modifier.width(6.dp))
+            Text(
+              text =
+                if (isUpdating) stringResource(R.string.action_updating_servers)
+                else stringResource(R.string.action_update_servers),
+              style = MaterialTheme.typography.labelLarge,
+            )
+          }
+        }
+
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.End,
+        ) {
+          OutlinedButton(
+            onClick = onImportOvpnClick,
+            shape = RoundedCornerShape(999.dp),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+            modifier = Modifier.testTag("servers_import_ovpn_button"),
+          ) {
+            Icon(
+              imageVector = Icons.Default.FileOpen,
+              contentDescription = stringResource(R.string.cd_import_ovpn),
+              modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+              text = stringResource(R.string.action_import_ovpn),
+              style = MaterialTheme.typography.labelLarge,
+            )
+          }
         }
       }
 
@@ -133,27 +169,44 @@ fun ServersScreen(
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(4.dp))
-            Button(
-              onClick = onSyncRemoteClick,
-              enabled = !isUpdating,
-              modifier = Modifier.testTag("servers_empty_update_button"),
+            Row(
+              horizontalArrangement = Arrangement.spacedBy(10.dp),
+              verticalAlignment = Alignment.CenterVertically,
             ) {
-              if (isUpdating) {
-                CircularProgressIndicator(
-                  modifier = Modifier.size(16.dp),
-                  strokeWidth = 2.dp,
-                  color = MaterialTheme.colorScheme.onPrimary,
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.action_updating_servers))
-              } else {
+              Button(
+                onClick = onSyncRemoteClick,
+                enabled = !isUpdating,
+                modifier = Modifier.testTag("servers_empty_update_button"),
+              ) {
+                if (isUpdating) {
+                  CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                  )
+                  Spacer(Modifier.width(8.dp))
+                  Text(stringResource(R.string.action_updating_servers))
+                } else {
+                  Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                  )
+                  Spacer(Modifier.width(6.dp))
+                  Text(stringResource(R.string.action_update_servers))
+                }
+              }
+              OutlinedButton(
+                onClick = onImportOvpnClick,
+                modifier = Modifier.testTag("servers_empty_import_ovpn_button"),
+              ) {
                 Icon(
-                  imageVector = Icons.Default.Refresh,
+                  imageVector = Icons.Default.FileOpen,
                   contentDescription = null,
-                  modifier = Modifier.size(18.dp),
+                  modifier = Modifier.size(17.dp),
                 )
                 Spacer(Modifier.width(6.dp))
-                Text(stringResource(R.string.action_update_servers))
+                Text(stringResource(R.string.action_import_ovpn))
               }
             }
           }
@@ -169,6 +222,12 @@ fun ServersScreen(
               server = server,
               isSelected = server.id == selectedServerId,
               onSelect = { onSelectServer(server) },
+              onDeleteImported =
+                if (server.isUserImported && server.isOpenVpnMode()) {
+                  { onDeleteImportedServer(server) }
+                } else {
+                  null
+                },
             )
           }
         }
@@ -182,6 +241,7 @@ private fun ServerItemCard(
   server: ServerAccountEntity,
   isSelected: Boolean,
   onSelect: () -> Unit,
+  onDeleteImported: (() -> Unit)? = null,
 ) {
   val borderColor =
     if (isSelected) MaterialTheme.colorScheme.primary
@@ -219,14 +279,35 @@ private fun ServerItemCard(
           Text(text = flag, fontSize = 20.sp)
         }
       }
-      Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(
-          text = server.name,
-          style = MaterialTheme.typography.titleMedium,
-          fontWeight = FontWeight.SemiBold,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-        )
+      Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          Text(
+            text = server.name,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+          )
+          if (server.isOpenVpnMode()) {
+            Surface(
+              shape = RoundedCornerShape(999.dp),
+              color = MaterialTheme.colorScheme.secondaryContainer,
+              modifier = Modifier.testTag("server_openvpn_badge_${server.id}"),
+            ) {
+              Text(
+                text = stringResource(R.string.badge_openvpn),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+              )
+            }
+          }
+        }
         if (server.expiryDate.isNotBlank()) {
           Text(
             text = expiryLabel,
@@ -236,6 +317,27 @@ private fun ServerItemCard(
               else MaterialTheme.colorScheme.primary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+          )
+        }
+        Text(
+          text = server.formatOnlineLimitLabel(),
+          style = MaterialTheme.typography.labelSmall,
+          fontFamily = MonoFontFamily,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+          modifier = Modifier.testTag("server_card_online_limit_${server.id}"),
+        )
+      }
+      if (onDeleteImported != null) {
+        IconButton(
+          onClick = onDeleteImported,
+          modifier = Modifier.size(48.dp).testTag("server_delete_${server.id}"),
+        ) {
+          Icon(
+            imageVector = Icons.Default.DeleteOutline,
+            contentDescription = stringResource(R.string.cd_delete_imported_server),
+            tint = MaterialTheme.colorScheme.error,
           )
         }
       }

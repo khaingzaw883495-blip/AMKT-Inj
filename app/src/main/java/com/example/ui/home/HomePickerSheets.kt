@@ -124,7 +124,8 @@ fun ServerPickerBottomSheet(
               style = MaterialTheme.typography.labelSmall,
               fontFamily = MonoFontFamily,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
-              modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+              modifier =
+                Modifier.padding(horizontal = 8.dp, vertical = 4.dp).testTag("server_sheet_count"),
             )
           }
         }
@@ -335,14 +336,35 @@ fun ServerPickerBottomSheet(
                     Text(text = flag, fontSize = 20.sp)
                   }
                 }
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                  Text(
-                    text = srv.name,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                  )
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                  Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                  ) {
+                    Text(
+                      text = srv.name,
+                      style = MaterialTheme.typography.titleSmall,
+                      fontWeight = FontWeight.Bold,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis,
+                      modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (srv.isOpenVpnMode()) {
+                      Surface(
+                        shape = RoundedCornerShape(999.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        modifier = Modifier.testTag("server_sheet_openvpn_badge_${srv.id}"),
+                      ) {
+                        Text(
+                          text = stringResource(R.string.badge_openvpn),
+                          style = MaterialTheme.typography.labelSmall,
+                          color = MaterialTheme.colorScheme.onSecondaryContainer,
+                          fontWeight = FontWeight.SemiBold,
+                          modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                        )
+                      }
+                    }
+                  }
                   if (srv.expiryDate.isNotBlank()) {
                     Text(
                       text = expiryLine,
@@ -354,6 +376,15 @@ fun ServerPickerBottomSheet(
                       overflow = TextOverflow.Ellipsis,
                     )
                   }
+                  Text(
+                    text = srv.formatOnlineLimitLabel(),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = MonoFontFamily,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag("server_sheet_online_limit_${srv.id}"),
+                  )
                 }
                 if (isSelected) {
                   Icon(
@@ -394,6 +425,7 @@ fun NetworkPickerBottomSheet(
   onSelect: (NetworkConfigEntity) -> Unit,
   onManageAll: () -> Unit,
   onDismiss: () -> Unit,
+  onClearNetwork: (() -> Unit)? = null,
 ) {
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   var query by remember { mutableStateOf("") }
@@ -442,7 +474,8 @@ fun NetworkPickerBottomSheet(
               style = MaterialTheme.typography.labelSmall,
               fontFamily = MonoFontFamily,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
-              modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+              modifier =
+                Modifier.padding(horizontal = 10.dp, vertical = 4.dp).testTag("network_sheet_count"),
             )
           }
         }
@@ -481,8 +514,23 @@ fun NetworkPickerBottomSheet(
 
       Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End,
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
       ) {
+        if (selectedNetworkId != null && onClearNetwork != null) {
+          TextButton(
+            onClick = onClearNetwork,
+            modifier = Modifier.testTag("network_sheet_clear"),
+          ) {
+            Text(
+              text = stringResource(R.string.action_no_network_direct),
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+        } else {
+          Spacer(Modifier.width(1.dp))
+        }
         TextButton(
           onClick = onManageAll,
           modifier = Modifier.testTag("network_sheet_manage"),

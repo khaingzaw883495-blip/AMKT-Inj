@@ -42,6 +42,7 @@ credentials = "1.5.0"
 googleid = "1.1.1"
 mwiedeJsch = "0.2.21"
 hevtunnel = "1.0.1"
+icsOpenvpn = "1.1.3"
 
 
 [libraries]
@@ -98,6 +99,7 @@ androidx-credentials-play-services = { group = "androidx.credentials", name = "c
 googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }
 mwiede-jsch = { group = "com.github.mwiede", name = "jsch", version.ref = "mwiedeJsch" }
 hevtunnel = { group = "com.zaneschepke", name = "hevtunnel", version.ref = "hevtunnel" }
+ics-openvpn = { group = "io.github.tim06", name = "openvpn", version.ref = "icsOpenvpn" }
 
 
 [plugins]

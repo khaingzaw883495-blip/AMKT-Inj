@@ -12,6 +12,8 @@ import com.example.data.ServerProfileRepository
 import com.example.dnstt.DnsttEngine
 import com.example.dnstt.NativeKotlinDnsttEngine
 import com.example.membership.MembershipRepository
+import com.example.openvpn.IcsOpenVpn3TunnelEngine
+import com.example.openvpn.OpenVpnTunnelEngine
 import com.example.redeem.RedeemRepository
 import com.example.ssh.JschSshTunnelEngine
 import com.example.ssh.SshTunnelEngine
@@ -61,6 +63,9 @@ class AmktApplication : Application() {
   lateinit var vlessEngine: VlessTunnelEngine
     private set
 
+  lateinit var openVpnEngine: OpenVpnTunnelEngine
+    private set
+
   override fun onCreate() {
     super.onCreate()
     database = AmktDatabase.getInstance(this)
@@ -81,10 +86,11 @@ class AmktApplication : Application() {
     vpnController = AndroidVpnEngineController(this)
     dnsttEngine = NativeKotlinDnsttEngine(logStore)
     vlessEngine = NativeVlessTunnelEngine(logStore)
+    openVpnEngine = IcsOpenVpn3TunnelEngine(logStore)
 
     logStore.append(
       tag = "BOOT",
-      message = "AMKT Injector (v1.0.0-m9 — ကွန်ရက် + ဆာဗာ ခွဲခြားစနစ် • Redeem Code • Update • SSH/Payload/DNSTT/VLESS + VPN) စတင်ဖွင့်လှစ်ပြီးပါပြီ",
+      message = "AMKT Injector (v1.0.0-m15 — SSH/Payload/DNSTT/VLESS/OpenVPN + VPN) စတင်ဖွင့်လှစ်ပြီးပါပြီ",
       level = LogLevel.INFO,
     )
     val cryptoBackend =

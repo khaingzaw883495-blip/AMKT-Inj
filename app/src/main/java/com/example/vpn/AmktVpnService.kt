@@ -21,11 +21,15 @@ import com.example.R
 import com.example.data.AppLogStore
 import com.example.data.EffectiveConnectionCombiner
 import com.example.data.LogLevel
+import com.example.data.NetworkConfigEntity
 import com.example.data.ProfileExpiryChecker
 import com.example.data.ServerProfileEntity
 import com.example.dnstt.DnsttConfig
 import com.example.dnstt.DnsttEngine
 import com.example.dnstt.DnsttState
+import com.example.openvpn.OpenVpnPayloadForwarder
+import com.example.openvpn.OpenVpnTunnelEngine
+import com.example.openvpn.OpenVpnTunnelState
 import com.example.ssh.LocalSocks5Proxy
 import com.example.ssh.SshTunnelEngine
 import com.example.ssh.SshTunnelState
@@ -59,12 +63,14 @@ class AmktVpnService : VpnService() {
   private lateinit var sshEngine: SshTunnelEngine
   private lateinit var dnsttEngine: DnsttEngine
   private lateinit var vlessEngine: VlessTunnelEngine
+  private lateinit var openVpnEngine: OpenVpnTunnelEngine
 
   private val tunLock = Any()
 
   @Volatile private var vpnInterface: ParcelFileDescriptor? = null
   @Volatile private var hevTunnelRunning: Boolean = false
   @Volatile private var currentProfile: ServerProfileEntity? = null
+  @Volatile private var currentNetwork: NetworkConfigEntity? = null
   @Volatile private var currentNetworkName: String = ""
   @Volatile private var currentServerName: String = ""
   @Volatile private var killSwitchEnabled: Boolean = true
@@ -84,6 +90,7 @@ class AmktVpnService : VpnService() {
     sshEngine = app.sshEngine
     dnsttEngine = app.dnsttEngine
     vlessEngine = app.vlessEngine
+    openVpnEngine = app.openVpnEngine
     ensureNotificationChannel()
   }
 
@@ -141,6 +148,9 @@ class AmktVpnService : VpnService() {
     }
     if (::vlessEngine.isInitialized) {
       runCatching { vlessEngine.abortActiveConnect() }
+    }
+    if (::openVpnEngine.isInitialized) {
+      runCatching { openVpnEngine.abortActiveConnect() }
     }
     serviceScope.cancel()
     super.onDestroy()
@@ -203,8 +213,8 @@ class AmktVpnService : VpnService() {
             return@launch
           }
           val reason = currentErrorReason()
-          val isAuthFail = reason.contains("Auth fail", ignoreCase = true)
-          if (!userRequestedStop && autoReconnectEnabled && !isAuthFail) {
+          val nonRetryable = isNonRetryableError(reason)
+          if (!userRequestedStop && autoReconnectEnabled && !nonRetryable) {
             // Initial connect never established a VPN tunnel yet, so do NOT open a blackhole
             // Kill Switch TUN during initial handshake retries (prevents trapping normal internet).
             runReconnectLoop(
@@ -239,27 +249,58 @@ class AmktVpnService : VpnService() {
     val effectiveNetId = if (networkId > 0L) networkId else VpnRuntimeStateHolder.activeNetworkId
     val effectiveSrvId = if (serverId > 0L) serverId else VpnRuntimeStateHolder.activeServerId
 
-    if (effectiveNetId > 0L && effectiveSrvId > 0L) {
-      val net = app.networkServerRepository.getNetworkById(effectiveNetId)
+    if (effectiveSrvId > 0L) {
       val srv = app.networkServerRepository.getServerById(effectiveSrvId)
-      if (net != null && srv != null) {
-        val combined = EffectiveConnectionCombiner.combine(net, srv)
-        VpnRuntimeStateHolder.activeProfile = combined
-        VpnRuntimeStateHolder.activeNetworkName = net.name
+      if (srv != null && srv.isOpenVpnMode()) {
+        val net =
+          when {
+            effectiveNetId > 0L ->
+              app.networkServerRepository.getNetworkById(effectiveNetId)
+                ?: VpnRuntimeStateHolder.activeNetwork?.takeIf { it.id == effectiveNetId }
+            else -> null
+          }
+        if (net != null) {
+          val combined = EffectiveConnectionCombiner.combine(net, srv)
+          currentNetwork = net
+          VpnRuntimeStateHolder.activeProfile = combined
+          VpnRuntimeStateHolder.activeNetwork = net
+          VpnRuntimeStateHolder.activeNetworkName = net.name
+          VpnRuntimeStateHolder.activeServerName = srv.name
+          return Triple(combined, net.name, srv.name)
+        }
+        val ovpnProfile = EffectiveConnectionCombiner.fromOpenVpnServer(srv)
+        currentNetwork = null
+        VpnRuntimeStateHolder.activeProfile = ovpnProfile
+        VpnRuntimeStateHolder.activeNetwork = null
+        VpnRuntimeStateHolder.activeNetworkName = ""
         VpnRuntimeStateHolder.activeServerName = srv.name
-        return Triple(combined, net.name, srv.name)
+        return Triple(ovpnProfile, "", srv.name)
+      }
+      if (effectiveNetId > 0L && srv != null) {
+        val net = app.networkServerRepository.getNetworkById(effectiveNetId)
+        if (net != null) {
+          val combined = EffectiveConnectionCombiner.combine(net, srv)
+          currentNetwork = net
+          VpnRuntimeStateHolder.activeProfile = combined
+          VpnRuntimeStateHolder.activeNetwork = net
+          VpnRuntimeStateHolder.activeNetworkName = net.name
+          VpnRuntimeStateHolder.activeServerName = srv.name
+          return Triple(combined, net.name, srv.name)
+        }
       }
     }
 
     val cached = VpnRuntimeStateHolder.activeProfile
     val netLabel = networkNameExtra.ifBlank { VpnRuntimeStateHolder.activeNetworkName }
     val srvLabel = serverNameExtra.ifBlank { VpnRuntimeStateHolder.activeServerName }
+    currentNetwork = VpnRuntimeStateHolder.activeNetwork
     if (cached != null && (profileId <= 0L || cached.id == profileId)) {
       return Triple(cached, netLabel, srvLabel.ifBlank { cached.name })
     }
     if (profileId > 0L) {
       val legacy = app.repository.getById(profileId)
       if (legacy != null) {
+        currentNetwork = null
         return Triple(legacy, netLabel, srvLabel.ifBlank { legacy.name })
       }
     }
@@ -277,10 +318,10 @@ class AmktVpnService : VpnService() {
   }
 
   private fun resolveDisplayTarget(profile: ServerProfileEntity): Pair<String, Int> {
-    return if (profile.isDnsttMode()) {
-      profile.dnsttNameserver.trim() to DnsttConfig.DEFAULT_RESOLVER_PORT
-    } else {
-      profile.sshHost.trim() to profile.sshPort.coerceIn(1, 65535)
+    return when {
+      profile.isOpenVpnMode() -> "" to 0
+      profile.isDnsttMode() -> profile.dnsttNameserver.trim() to DnsttConfig.DEFAULT_RESOLVER_PORT
+      else -> profile.sshHost.trim() to profile.sshPort.coerceIn(1, 65535)
     }
   }
 
@@ -325,7 +366,58 @@ class AmktVpnService : VpnService() {
       )
     }
 
+    // 0. OpenVPN transport (ics-openvpn OpenVPN3 directly through Android VpnService)
+    if (profile.isOpenVpnMode()) {
+      stopHevTunnelQuietly()
+      runCatching { sshEngine.disconnect() }
+      runCatching { vlessEngine.disconnect() }
+      runCatching { dnsttEngine.stop() }
+
+      val ovpnResult =
+        openVpnEngine.connect(
+          vpnService = this,
+          profile = profile,
+          network = currentNetwork,
+          // Atomically close any prior Kill-Switch blackhole TUN right after OpenVPN TUN is active
+          onTunEstablished = { closeTunInterfaceQuietly() },
+        )
+      if (ovpnResult.isFailure || userRequestedStop) {
+        val reason = ovpnResult.exceptionOrNull()?.message ?: "OpenVPN ချိတ်ဆက်မှု မအောင်မြင်ပါ"
+        runCatching { openVpnEngine.disconnect() }
+        if (!userRequestedStop && !isReconnectAttempt) {
+          VpnRuntimeStateHolder.updateState(VpnTunnelState.Error(reason))
+        }
+        return false
+      }
+
+      sessionConnectedAtMs = System.currentTimeMillis()
+      VpnRuntimeStateHolder.updateState(
+        VpnTunnelState.Connected(
+          profileName = currentServerName.ifBlank { profile.name },
+          targetHost = "",
+          targetPort = 0,
+          localSocksHost = "",
+          localSocksPort = 0,
+          killSwitchEnabled = killSwitchEnabled,
+          autoReconnectEnabled = autoReconnectEnabled,
+          connectedAtMs = sessionConnectedAtMs,
+          networkName = currentNetworkName,
+          serverName = currentServerName.ifBlank { profile.name },
+        )
+      )
+      val successMsg =
+        if (isReconnectAttempt) {
+          "OpenVPN အလိုအလျောက် ပြန်လည်ချိတ်ဆက်မှု အောင်မြင်ပြီးပါပြီ (ကြိုးစားမှု #$attemptNumber)"
+        } else {
+          "OpenVPN ချိတ်ဆက်ပြီးပါပြီ"
+        }
+      logStore.append(tag = "VPN", message = successMsg, level = LogLevel.SUCCESS)
+      startTrafficAndNotificationTicker(profile)
+      return true
+    }
+
     // 1 & 2. Start underlying tunnel engine (VLESS over WebSocket OR DNSTT+SSH OR SSH) -> Local SOCKS5 on 127.0.0.1:1080
+    runCatching { openVpnEngine.disconnect() }
     var dnsttLocalPort: Int? = null
     val boundSocksPort: Int
     if (profile.isVlessMode()) {
@@ -523,6 +615,26 @@ class AmktVpnService : VpnService() {
 
     return try {
       coroutineScope {
+        val openVpnWatcher =
+          if (profile.isOpenVpnMode()) {
+            launch {
+              openVpnEngine.state.collect { ovpnState ->
+                if (userRequestedStop) return@collect
+                when (ovpnState) {
+                  is OpenVpnTunnelState.Error -> triggerDrop(ovpnState.reason)
+                  is OpenVpnTunnelState.Disconnected -> {
+                    if (VpnRuntimeStateHolder.state.value is VpnTunnelState.Connected) {
+                      triggerDrop("OpenVPN ချိတ်ဆက်မှု ပြတ်တောက်သွားပါသည်")
+                    }
+                  }
+                  else -> Unit
+                }
+              }
+            }
+          } else {
+            null
+          }
+
         val vlessWatcher =
           if (profile.isVlessMode()) {
             launch {
@@ -544,7 +656,7 @@ class AmktVpnService : VpnService() {
           }
 
         val sshWatcher =
-          if (!profile.isVlessMode()) {
+          if (!profile.isVlessMode() && !profile.isOpenVpnMode()) {
             launch {
               sshEngine.state.collect { sshState ->
                 if (userRequestedStop) return@collect
@@ -584,6 +696,7 @@ class AmktVpnService : VpnService() {
           }
 
         val reason = dropSignal.await()
+        openVpnWatcher?.cancel()
         vlessWatcher?.cancel()
         sshWatcher?.cancel()
         dnsttWatcher?.cancel()
@@ -600,6 +713,7 @@ class AmktVpnService : VpnService() {
     stopHevTunnelQuietly()
     runCatching { sshEngine.disconnect() }
     runCatching { vlessEngine.disconnect() }
+    runCatching { openVpnEngine.disconnect() }
     if (profile.isDnsttMode()) {
       runCatching { dnsttEngine.stop() }
     }
@@ -621,8 +735,8 @@ class AmktVpnService : VpnService() {
       )
     }
 
-    val isAuthFail = reason.contains("Auth fail", ignoreCase = true)
-    if (autoReconnectEnabled && !isAuthFail) {
+    val nonRetryable = isNonRetryableError(reason)
+    if (autoReconnectEnabled && !nonRetryable) {
       runReconnectLoop(
         profile = profile,
         initialReason = reason,
@@ -684,7 +798,7 @@ class AmktVpnService : VpnService() {
       if (userRequestedStop || !autoReconnectEnabled) break
 
       lastReason = currentErrorReason()
-      if (lastReason.contains("Auth fail", ignoreCase = true)) {
+      if (isNonRetryableError(lastReason)) {
         break
       }
       if (engageKillSwitchOnRetry && killSwitchEnabled && !userRequestedStop) {
@@ -810,6 +924,9 @@ class AmktVpnService : VpnService() {
     if (::dnsttEngine.isInitialized) {
       runCatching { dnsttEngine.stopNow() }
     }
+    if (::openVpnEngine.isInitialized) {
+      runCatching { openVpnEngine.abortActiveConnect() }
+    }
     VpnRuntimeStateHolder.resetTraffic()
     VpnRuntimeStateHolder.updateState(VpnTunnelState.Disconnected)
 
@@ -829,6 +946,7 @@ class AmktVpnService : VpnService() {
     runCatching { sshEngine.disconnect() }
     runCatching { vlessEngine.disconnect() }
     runCatching { dnsttEngine.stop() }
+    runCatching { openVpnEngine.disconnect() }
     VpnRuntimeStateHolder.resetTraffic()
     if (clearStateToDisconnected) {
       VpnRuntimeStateHolder.updateState(VpnTunnelState.Disconnected)
@@ -877,8 +995,11 @@ class AmktVpnService : VpnService() {
           if (vpnState !is VpnTunnelState.Connected) break
 
           val socksStats =
-            if (profile.isVlessMode()) vlessEngine.trafficStats.value
-            else sshEngine.trafficStats.value
+            when {
+              profile.isOpenVpnMode() -> openVpnEngine.trafficStats.value
+              profile.isVlessMode() -> vlessEngine.trafficStats.value
+              else -> sshEngine.trafficStats.value
+            }
           val tunStats = if (hevTunnelRunning) hevTunnel.getStats() else NativeTunStats()
 
           // Combine TUN counters and SOCKS5 counters safely (prefer higher live figure)
@@ -925,10 +1046,10 @@ class AmktVpnService : VpnService() {
           if (!userRequestedStop && VpnRuntimeStateHolder.state.value is VpnTunnelState.Connected) {
             serviceScope.launch {
               delay(750L)
-              if (currentProfile?.isVlessMode() == true) {
-                vlessEngine.probeKeepAlive()
-              } else {
-                sshEngine.probeKeepAlive()
+              when {
+                currentProfile?.isOpenVpnMode() == true -> openVpnEngine.notifyNetworkChange()
+                currentProfile?.isVlessMode() == true -> vlessEngine.probeKeepAlive()
+                else -> sshEngine.probeKeepAlive()
               }
             }
           }
@@ -963,10 +1084,16 @@ class AmktVpnService : VpnService() {
   }
 
   private fun currentErrorReason(): String {
-    return (vlessEngine.state.value as? VlessTunnelState.Error)?.reason
+    return (openVpnEngine.state.value as? OpenVpnTunnelState.Error)?.reason
+      ?: (vlessEngine.state.value as? VlessTunnelState.Error)?.reason
       ?: (sshEngine.state.value as? SshTunnelState.Error)?.reason
       ?: (dnsttEngine.state.value as? DnsttState.Error)?.message
       ?: "Tunnel ချိတ်ဆက်မှု ပြတ်တောက်နေပါသည်"
+  }
+
+  private fun isNonRetryableError(reason: String): Boolean {
+    return reason.contains("Auth fail", ignoreCase = true) ||
+      reason.contains(OpenVpnPayloadForwarder.OVPN_TCP_ONLY_ERROR, ignoreCase = true)
   }
 
   private fun ensureNotificationChannel() {

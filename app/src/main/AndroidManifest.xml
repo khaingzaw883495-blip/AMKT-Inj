@@ -40,7 +40,7 @@
             </intent-filter>
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="User-initiated system-wide SSH VPN tunnel using Android VpnService and hev-socks5-tunnel" />
+                android:value="User-initiated system-wide SSH, VLESS, and OpenVPN tunnel using Android VpnService" />
         </service>
     </application>
 
