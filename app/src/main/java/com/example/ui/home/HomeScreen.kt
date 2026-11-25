@@ -114,8 +114,10 @@ fun HomeScreen(
   onOpenBannerLink: (String) -> Unit = {},
   onClearNetwork: (() -> Unit)? = null,
   showAdsterraBanners: Boolean = true,
+  showOwnerBanner: Boolean = true,
   freeTimeStatus: FreeTimeStatus? = null,
   hasValidNoAdsPass: Boolean = false,
+  hasActiveRedeemedServer: Boolean = false,
   nowEpochMsProvider: () -> Long = { System.currentTimeMillis() },
   onExtendTimeClick: () -> Unit = {},
   modifier: Modifier = Modifier,
@@ -190,11 +192,15 @@ fun HomeScreen(
     }
   }
 
+  val isSelectedActiveRedeemed =
+    selectedServer?.isRedeemedServer() == true && !selectedServer.isExpired()
+  val isPaidUser = hasValidNoAdsPass || hasActiveRedeemedServer || isSelectedActiveRedeemed
+
   // Live 1-second clock for the selected server's HH:MM:SS remaining-time / free-time countdown
   var nowEpochMs by remember { mutableLongStateOf(nowEpochMsProvider()) }
   val shouldTickClock =
     !selectedServer?.expiryDate.isNullOrBlank() ||
-      (freeTimeStatus != null && freeTimeStatus.initialized && !hasValidNoAdsPass && selectedServer?.isRedeemedServer() != true)
+      (freeTimeStatus != null && freeTimeStatus.initialized && !isPaidUser)
   LaunchedEffect(shouldTickClock, selectedServer?.expiryDate, freeTimeStatus?.expiresAtMs) {
     nowEpochMs = nowEpochMsProvider()
     if (shouldTickClock) {
@@ -230,6 +236,7 @@ fun HomeScreen(
           nowEpochMs = nowEpochMs,
           freeTimeStatus = freeTimeStatus,
           hasValidNoAdsPass = hasValidNoAdsPass,
+          hasActiveRedeemedServer = hasActiveRedeemedServer,
           onOpenNetworkPicker = { showNetworkSheet = true },
           onOpenServerPicker = { showServerSheet = true },
           onExtendTimeClick = onExtendTimeClick,
@@ -317,18 +324,20 @@ fun HomeScreen(
         }
       }
 
-      // 7. Owner Announcement Banner (from Remote JSON "ads" section, or built-in AMKT Telegram fallback)
-      item {
-        OwnerBannerCard(
-          banner = ownerBanner,
-          onOpenLink = {
-            val targetUrl = ownerBanner?.effectiveLinkUrl() ?: OwnerBanner.DEFAULT_TELEGRAM_URL
-            onOpenBannerLink(targetUrl)
-          },
-        )
+      // 7. Owner Announcement Banner (removed completely for active INJ-code users)
+      if (showOwnerBanner) {
+        item {
+          OwnerBannerCard(
+            banner = ownerBanner,
+            onOpenLink = {
+              val targetUrl = ownerBanner?.effectiveLinkUrl() ?: OwnerBanner.DEFAULT_TELEGRAM_URL
+              onOpenBannerLink(targetUrl)
+            },
+          )
+        }
       }
 
-      // 8. Bottom Adsterra Smartlink_2 banner + 320x50 banner (hidden when stored no-ads code is valid)
+      // 8. Bottom Adsterra Smartlink_2 banner + 320x50 banner (removed completely when paid/no-ads)
       if (showAdsterraBanners) {
         item {
           BottomSmartlinkBannerCard(
@@ -469,6 +478,7 @@ private fun UnifiedConnectionCard(
   nowEpochMs: Long,
   freeTimeStatus: FreeTimeStatus?,
   hasValidNoAdsPass: Boolean,
+  hasActiveRedeemedServer: Boolean,
   onOpenNetworkPicker: () -> Unit,
   onOpenServerPicker: () -> Unit,
   onExtendTimeClick: () -> Unit,
@@ -517,13 +527,12 @@ private fun UnifiedConnectionCard(
       )
     }
 
+  val isPaidOrActiveRedeemed =
+    hasValidNoAdsPass ||
+      hasActiveRedeemedServer ||
+      (selectedServer?.isRedeemedServer() == true && !selectedServer.isExpired())
   val activeFreeTime =
-    if (
-      freeTimeStatus != null &&
-        !hasValidNoAdsPass &&
-        selectedServer != null &&
-        !selectedServer.isRedeemedServer()
-    ) {
+    if (freeTimeStatus != null && !isPaidOrActiveRedeemed && selectedServer != null) {
       freeTimeStatus
     } else {
       null
@@ -691,8 +700,7 @@ private fun UnifiedConnectionCard(
       HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
       // Row 3: Remaining time row (Clock icon + "Remaining time" + HH:MM:SS countdown + Extend Time button)
-      val showExtendTimeButton =
-        freeTimeStatus != null && !hasValidNoAdsPass && selectedServer?.isRedeemedServer() != true
+      val showExtendTimeButton = freeTimeStatus != null && !isPaidOrActiveRedeemed
       val canExtendToday = freeTimeStatus?.canWatchAdForGrant() == true
       val remainingGrantsToday = freeTimeStatus?.remainingGrantsToday() ?: 0
 

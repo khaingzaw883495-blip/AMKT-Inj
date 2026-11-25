@@ -1,6 +1,7 @@
 package com.example
 
 import android.app.Application
+import com.example.analytics.AppAnalyticsInitializer
 import com.example.config.ConfigFileCodec
 import com.example.config.NativeKeyBridge
 import com.example.data.AmktDatabase
@@ -88,9 +89,11 @@ class AmktApplication : Application() {
     vlessEngine = NativeVlessTunnelEngine(logStore)
     openVpnEngine = IcsOpenVpn3TunnelEngine(logStore)
 
+    AppAnalyticsInitializer.initialize(this)
+
     logStore.append(
       tag = "BOOT",
-      message = "AMKT Injector (v1.0.0-m15 — SSH/Payload/DNSTT/VLESS/OpenVPN + VPN) စတင်ဖွင့်လှစ်ပြီးပါပြီ",
+      message = "AMKT Injector (v1.0.0-m17 — SSH/Payload/DNSTT/VLESS/OpenVPN + VPN) စတင်ဖွင့်လှစ်ပြီးပါပြီ",
       level = LogLevel.INFO,
     )
     val cryptoBackend =

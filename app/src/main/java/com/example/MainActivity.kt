@@ -164,6 +164,7 @@ internal fun AmktInjectorApp(
   val vpnSettings by viewModel.vpnSettings.collectAsStateWithLifecycle()
   val ownerBanner by viewModel.ownerBanner.collectAsStateWithLifecycle()
   val hasValidNoAdsPass by viewModel.hasValidNoAdsPass.collectAsStateWithLifecycle()
+  val hasActiveRedeemedServer by viewModel.hasActiveRedeemedServer.collectAsStateWithLifecycle()
   val freeTimeStatus by viewModel.freeTimeStatus.collectAsStateWithLifecycle()
   val isFetchingRemoteServers by viewModel.isFetchingRemoteServers.collectAsStateWithLifecycle()
   val remoteSyncFeedback by viewModel.remoteSyncFeedback.collectAsStateWithLifecycle()
@@ -330,7 +331,10 @@ internal fun AmktInjectorApp(
 
   fun launchExtendTimeFlow() {
     if (pendingAdGateTask != null) return
-    if (hasValidNoAdsPass || selectedServer?.isRedeemedServer() == true) return
+    val isSelectedActiveRedeemed =
+      selectedServer?.let { it.isRedeemedServer() && !it.isExpired(viewModel.currentLocalYmd()) } ==
+        true
+    if (hasValidNoAdsPass || hasActiveRedeemedServer || isSelectedActiveRedeemed) return
     if (!freeTimeStatus.canWatchAdForGrant()) {
       viewModel.notifyMessage(context.getString(R.string.free_time_daily_limit_reached))
       return
@@ -506,9 +510,11 @@ internal fun AmktInjectorApp(
                 }
               },
               onClearNetwork = viewModel::clearSelectedNetwork,
-              showAdsterraBanners = !hasValidNoAdsPass,
+              showAdsterraBanners = !hasValidNoAdsPass && !hasActiveRedeemedServer,
+              showOwnerBanner = !hasActiveRedeemedServer,
               freeTimeStatus = freeTimeStatus,
               hasValidNoAdsPass = hasValidNoAdsPass,
+              hasActiveRedeemedServer = hasActiveRedeemedServer,
               nowEpochMsProvider = viewModel::currentEpochMs,
               onExtendTimeClick = { launchExtendTimeFlow() },
             )

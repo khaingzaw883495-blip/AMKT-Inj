@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.amktinjector.vkwmrx"
     minSdk = 24
     targetSdk = 36
-    versionCode = 21
-    versionName = "1.0.0-m15"
+    versionCode = 23
+    versionName = "1.0.0-m17"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -99,7 +99,8 @@ googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.W
 // zero third-party analytics, ads, or unrequested network libraries.
 dependencies {
   implementation(platform(libs.androidx.compose.bom))
-  // implementation(platform(libs.firebase.bom))
+  implementation(platform(libs.firebase.bom))
+  implementation(libs.firebase.analytics)
   // implementation(libs.accompanist.permissions)
   implementation(libs.androidx.activity.compose)
   // implementation(libs.androidx.camera.camera2)

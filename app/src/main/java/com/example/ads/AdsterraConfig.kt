@@ -107,9 +107,13 @@ object AdsterraConfig {
     freeTimeStatus: FreeTimeStatus,
     nowMs: Long = System.currentTimeMillis(),
     todayYmd: Int = ProfileExpiryChecker.currentLocalYmd(),
+    hasActiveRedeemedServer: Boolean = false,
   ): ConnectGateDecision {
     if (passStatus.isCurrentlyValid(todayYmd)) return ConnectGateDecision.SkipUnlimited
-    if (server.isRedeemedServer()) return ConnectGateDecision.SkipUnlimited
+    if (hasActiveRedeemedServer) return ConnectGateDecision.SkipUnlimited
+    if (server.isRedeemedServer() && !server.isExpired(todayYmd)) {
+      return ConnectGateDecision.SkipUnlimited
+    }
     if (!freeTimeStatus.initialized) return ConnectGateDecision.ShowGateAndGrantInitialFree
     if (freeTimeStatus.expiresAtMs > nowMs) return ConnectGateDecision.ShowGateAndConnect
     return if (freeTimeStatus.grantsUsedToday < MAX_TIME_EXTEND_GRANTS_PER_DAY) {
@@ -122,27 +126,30 @@ object AdsterraConfig {
   /**
    * Returns `true` whenever a connection must pass through the 7-second external-browser Smartlink_2
    * gate: ALL free connections show the gate with NO daily limit; ONLY validated no-ads codes and
-   * INJ-redeemed paid servers skip it.
+   * active (non-expired) INJ-redeemed paid servers skip it.
    */
   fun shouldShowConnectGate(
     server: ServerAccountEntity,
     passStatus: PassStatus,
     @Suppress("UNUSED_PARAMETER") shownTodayCount: Int = 0,
     todayYmd: Int = ProfileExpiryChecker.currentLocalYmd(),
+    hasActiveRedeemedServer: Boolean = false,
   ): Boolean {
     if (passStatus.isCurrentlyValid(todayYmd)) return false
-    if (server.isRedeemedServer()) return false
+    if (hasActiveRedeemedServer) return false
+    if (server.isRedeemedServer() && !server.isExpired(todayYmd)) return false
     return true
   }
 
   /**
-   * Adsterra bottom Smartlink + 320x50 banners are shown whenever the user does not have a
-   * currently valid stored no-ads code. (The owner's own announcement banner remains visible.)
+   * Adsterra bottom Smartlink + 320x50 banners are shown whenever the user has neither a valid
+   * stored no-ads code nor an active (non-expired) INJ-redeemed server.
    */
   fun shouldShowAdsterraBanners(
     passStatus: PassStatus,
     todayYmd: Int = ProfileExpiryChecker.currentLocalYmd(),
-  ): Boolean = !passStatus.isCurrentlyValid(todayYmd)
+    hasActiveRedeemedServer: Boolean = false,
+  ): Boolean = !passStatus.isCurrentlyValid(todayYmd) && !hasActiveRedeemedServer
 }
 
 /**

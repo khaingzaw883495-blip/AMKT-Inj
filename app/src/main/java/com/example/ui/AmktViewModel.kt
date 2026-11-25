@@ -169,6 +169,18 @@ class AmktViewModel(
         initialValue = false,
       )
 
+  val hasActiveRedeemedServer: StateFlow<Boolean> =
+    servers
+      .map { list ->
+        val today = membershipRepository.currentLocalYmd()
+        list.any { it.isRedeemedServer() && !it.isExpired(today) }
+      }
+      .stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = false,
+      )
+
   val adGateShownCountToday: StateFlow<Int> =
     membershipRepository.adGateDailyCountFlow.stateIn(
       scope = viewModelScope,
@@ -184,6 +196,8 @@ class AmktViewModel(
     )
 
   fun currentEpochMs(): Long = membershipRepository.currentEpochMs()
+
+  fun currentLocalYmd(): Int = membershipRepository.currentLocalYmd()
 
   val ownerBanner: StateFlow<OwnerBanner?> =
     membershipRepository.ownerBannerFlow.stateIn(
@@ -929,6 +943,11 @@ class AmktViewModel(
     )
   }
 
+  private suspend fun hasActiveRedeemedServerNow(todayYmd: Int): Boolean {
+    val snapshot = networkServerRepository?.getAllServersSnapshot() ?: servers.value
+    return snapshot.any { it.isRedeemedServer() && !it.isExpired(todayYmd) }
+  }
+
   /**
    * Checks whether tapping CONNECT on Home for [server] must pass through the 7-second Smartlink_2
    * gate, reading fresh DataStore state. Free connections ALWAYS show the gate (no daily limit).
@@ -937,11 +956,13 @@ class AmktViewModel(
     val todayYmd = membershipRepository.currentLocalYmd()
     val currentPass = membershipRepository.passStatusFlow.first()
     val shownToday = membershipRepository.getAdGateCountForDate(todayYmd)
+    val activeRedeemed = hasActiveRedeemedServerNow(todayYmd)
     return AdsterraConfig.shouldShowConnectGate(
       server = server,
       passStatus = currentPass,
       shownTodayCount = shownToday,
       todayYmd = todayYmd,
+      hasActiveRedeemedServer = activeRedeemed,
     )
   }
 
@@ -949,7 +970,7 @@ class AmktViewModel(
 
   /**
    * Evaluates the Free-Time + Smartlink_2 connect gate decision on [viewModelScope]:
-   * - [ConnectGateDecision.SkipUnlimited]: INJ-redeemed server or valid no-ads code -> connect directly.
+   * - [ConnectGateDecision.SkipUnlimited]: active INJ-redeemed server or valid no-ads code -> connect directly.
    * - [ConnectGateDecision.ShowGateAndGrantInitialFree]: First free connect -> 7s gate + 6h initial free time -> connect.
    * - [ConnectGateDecision.ShowGateAndConnect]: Active free time -> 7s gate (every connect, unlimited) -> connect.
    * - [ConnectGateDecision.ShowGateAndGrantExtension]: Free time ended and grants < 2 -> 7s gate + +9h grant -> connect.
@@ -977,12 +998,14 @@ class AmktViewModel(
     val nowMs = membershipRepository.currentEpochMs()
     val currentPass = membershipRepository.passStatusFlow.first()
     val currentFree = membershipRepository.getFreeTimeStatus(todayYmd)
+    val activeRedeemed = hasActiveRedeemedServerNow(todayYmd)
     return AdsterraConfig.evaluateConnectGateDecision(
       server = server,
       passStatus = currentPass,
       freeTimeStatus = currentFree,
       nowMs = nowMs,
       todayYmd = todayYmd,
+      hasActiveRedeemedServer = activeRedeemed,
     )
   }
 
@@ -1050,12 +1073,14 @@ class AmktViewModel(
     val todayYmd = membershipRepository.currentLocalYmd()
     val currentPass = membershipRepository.passStatusFlow.first()
     val shownToday = membershipRepository.getAdGateCountForDate(todayYmd)
+    val activeRedeemed = hasActiveRedeemedServerNow(todayYmd)
     val shouldShow =
       AdsterraConfig.shouldShowConnectGate(
         server = server,
         passStatus = currentPass,
         shownTodayCount = shownToday,
         todayYmd = todayYmd,
+        hasActiveRedeemedServer = activeRedeemed,
       )
     if (shouldShow) {
       membershipRepository.recordAdGateShown(todayYmd)
