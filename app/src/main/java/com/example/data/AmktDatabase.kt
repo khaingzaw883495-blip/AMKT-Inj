@@ -16,7 +16,7 @@ import com.example.vless.VlessConfigParser
     NetworkConfigEntity::class,
     ServerAccountEntity::class,
   ],
-  version = 6,
+  version = 7,
   exportSchema = false,
 )
 abstract class AmktDatabase : RoomDatabase() {
@@ -298,6 +298,19 @@ abstract class AmktDatabase : RoomDatabase() {
         }
       }
 
+    /**
+     * Migrates v6 -> v7 (Per-server lifetime distinct user count):
+     * Adds nullable `lifetimeUsers` column to `server_accounts`.
+     */
+    val MIGRATION_6_7: Migration =
+      object : Migration(6, 7) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+          db.execSQL(
+            "ALTER TABLE server_accounts ADD COLUMN lifetimeUsers INTEGER DEFAULT NULL"
+          )
+        }
+      }
+
     fun getInstance(context: Context): AmktDatabase {
       return instance
         ?: synchronized(this) {
@@ -313,6 +326,7 @@ abstract class AmktDatabase : RoomDatabase() {
                 MIGRATION_3_4,
                 MIGRATION_4_5,
                 MIGRATION_5_6,
+                MIGRATION_6_7,
               )
               .build()
               .also { instance = it }

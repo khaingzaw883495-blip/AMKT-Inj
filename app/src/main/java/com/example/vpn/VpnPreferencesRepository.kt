@@ -16,6 +16,7 @@ private val Context.vpnPrefsDataStore: DataStore<Preferences> by
 data class VpnProtectionSettings(
   val killSwitchEnabled: Boolean = true,
   val autoReconnectEnabled: Boolean = true,
+  val darkThemeEnabled: Boolean = true,
 )
 
 class VpnPreferencesRepository(private val context: Context) {
@@ -24,6 +25,7 @@ class VpnPreferencesRepository(private val context: Context) {
       VpnProtectionSettings(
         killSwitchEnabled = prefs[KEY_KILL_SWITCH] ?: true,
         autoReconnectEnabled = prefs[KEY_AUTO_RECONNECT] ?: true,
+        darkThemeEnabled = prefs[KEY_DARK_THEME] ?: true,
       )
     }
 
@@ -37,8 +39,13 @@ class VpnPreferencesRepository(private val context: Context) {
     context.vpnPrefsDataStore.edit { prefs -> prefs[KEY_AUTO_RECONNECT] = enabled }
   }
 
+  suspend fun setDarkThemeEnabled(enabled: Boolean) {
+    context.vpnPrefsDataStore.edit { prefs -> prefs[KEY_DARK_THEME] = enabled }
+  }
+
   companion object {
     private val KEY_KILL_SWITCH = booleanPreferencesKey("kill_switch_enabled")
     private val KEY_AUTO_RECONNECT = booleanPreferencesKey("auto_reconnect_enabled")
+    private val KEY_DARK_THEME = booleanPreferencesKey("dark_theme_enabled")
   }
 }

@@ -70,7 +70,7 @@ import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [36])
 class OwnerAnnouncementBannerTest {
 
   @get:Rule val composeRule = createComposeRule()

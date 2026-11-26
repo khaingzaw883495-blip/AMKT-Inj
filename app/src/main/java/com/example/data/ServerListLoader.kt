@@ -6,6 +6,8 @@ import com.example.config.ServerAccountDto
 import com.example.membership.OwnerBanner
 import com.example.membership.OwnerBannerNestedDto
 import com.example.membership.OwnerBannerPayloadDto
+import com.example.membership.RemotePriceDto
+import com.example.membership.RemotePriceItem
 import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 import com.squareup.moshi.Moshi
@@ -33,6 +35,12 @@ data class SplitRemoteEnvelopeDto(
   @Json(name = "ads") val ads: OwnerBannerNestedDto? = null,
   @Json(name = "own_ad") val ownAd: OwnerBannerNestedDto? = null,
   @Json(name = "banner") val banner: OwnerBannerNestedDto? = null,
+  @Json(name = "prices") val prices: List<RemotePriceDto>? = null,
+  @Json(name = "pricing") val pricing: List<RemotePriceDto>? = null,
+  @Json(name = "plans") val plans: List<RemotePriceDto>? = null,
+  @Json(name = "app_users") val appUsers: Int? = null,
+  @Json(name = "total_app_users") val totalAppUsers: Int? = null,
+  @Json(name = "total_users") val totalUsers: Int? = null,
 )
 
 /**
@@ -84,6 +92,11 @@ data class SplitOrLegacyServerDto(
   @Json(name = "user_limit") val userLimit: Int? = null,
   @Json(name = "max_online") val maxOnline: Int? = null,
   @Json(name = "capacity") val capacity: Int? = null,
+  @Json(name = "lifetime_users") val lifetimeUsers: Int? = null,
+  @Json(name = "used_by") val usedBy: Int? = null,
+  @Json(name = "distinct_users") val distinctUsers: Int? = null,
+  @Json(name = "total_users") val totalUsers: Int? = null,
+  @Json(name = "server_users") val serverUsers: Int? = null,
 ) {
   fun isOpenVpnEntry(): Boolean {
     if (ovpn.isNotBlank()) return true
@@ -171,6 +184,11 @@ data class SplitOrLegacyServerDto(
       userLimit = userLimit,
       maxOnline = maxOnline,
       capacity = capacity,
+      lifetimeUsers = lifetimeUsers,
+      usedBy = usedBy,
+      distinctUsers = distinctUsers,
+      totalUsers = totalUsers,
+      serverUsers = serverUsers,
     )
 }
 
@@ -183,6 +201,8 @@ data class SplitRemoteListResult(
   val serverDtos: List<ServerAccountDto>,
   val legacyProfileDtos: List<MyVpnConfigDto>,
   val ownerBanner: OwnerBanner? = null,
+  val prices: List<RemotePriceItem> = emptyList(),
+  val totalAppUsers: Int? = null,
   val hasNetworksSection: Boolean = networkDtos.isNotEmpty() || legacyProfileDtos.isNotEmpty(),
   val hasServersSection: Boolean = serverDtos.isNotEmpty() || legacyProfileDtos.isNotEmpty(),
 ) {
@@ -337,12 +357,21 @@ class ServerListLoader {
                   nestedBanner = env?.banner,
                 )
                 .resolve()
+            val parsedPrices =
+              (env?.prices ?: env?.pricing ?: env?.plans)
+                .orEmpty()
+                .mapNotNull { it.resolveOrNull() }
+            val parsedAppUsers =
+              listOfNotNull(env?.appUsers, env?.totalAppUsers, env?.totalUsers)
+                .firstOrNull { it >= 0 }
 
             SplitRemoteListResult(
               networkDtos = networks,
               serverDtos = servers,
               legacyProfileDtos = legacy,
               ownerBanner = parsedBanner,
+              prices = parsedPrices,
+              totalAppUsers = parsedAppUsers,
               hasNetworksSection = explicitNetworksPresent || networks.isNotEmpty() || legacy.isNotEmpty(),
               hasServersSection = explicitServersPresent || servers.isNotEmpty() || legacy.isNotEmpty(),
             )

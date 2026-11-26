@@ -123,6 +123,11 @@ data class ServerAccountDto(
   @Json(name = "user_limit") val userLimit: Int? = null,
   @Json(name = "max_online") val maxOnline: Int? = null,
   @Json(name = "capacity") val capacity: Int? = null,
+  @Json(name = "lifetime_users") val lifetimeUsers: Int? = null,
+  @Json(name = "used_by") val usedBy: Int? = null,
+  @Json(name = "distinct_users") val distinctUsers: Int? = null,
+  @Json(name = "total_users") val totalUsers: Int? = null,
+  @Json(name = "server_users") val serverUsers: Int? = null,
 ) {
   val effectiveHost: String
     get() = host.trim().ifBlank { legacySshHost.trim() }
@@ -153,6 +158,11 @@ data class ServerAccountDto(
 
   val effectiveUserLimit: Int
     get() = explicitUserLimit ?: ServerAccountEntity.DEFAULT_USER_LIMIT
+
+  val effectiveLifetimeUsers: Int?
+    get() =
+      listOf(lifetimeUsers, usedBy, distinctUsers, totalUsers, serverUsers)
+        .firstOrNull { it != null && it >= 0 }
 
   fun inferServerConnectionMode(): ConnectionMode {
     val explicit = ConnectionMode.fromCode(effectiveModeRaw)
@@ -212,6 +222,7 @@ data class ServerAccountDto(
         isUserImported = false,
         onlineCount = effectiveOnlineCount,
         userLimit = effectiveUserLimit,
+        lifetimeUsers = effectiveLifetimeUsers,
       )
     }
 
@@ -249,6 +260,7 @@ data class ServerAccountDto(
       isUserImported = false,
       onlineCount = effectiveOnlineCount,
       userLimit = effectiveUserLimit,
+      lifetimeUsers = effectiveLifetimeUsers,
     )
   }
 

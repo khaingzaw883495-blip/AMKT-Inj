@@ -20,7 +20,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.Lan
 import androidx.compose.material.icons.filled.Refresh
@@ -30,7 +29,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -39,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -48,12 +48,14 @@ import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.ServerAccountEntity
 import com.example.data.ServerPingChecker
+import com.example.ui.ads.Adsterra320x50BannerSlot
+import com.example.ui.home.ServerPingPill
 import com.example.ui.theme.MonoFontFamily
 
 /**
- * Locked-down Servers list: shows flag emoji + Server name (+ small OpenVPN badge for OpenVPN
- * profiles) + read-only expiry line to select, plus Update (Remote JSON) and Import .ovpn actions.
- * Remote servers can never be edited or deleted; only user-imported .ovpn profiles may be deleted.
+ * Locked-down Servers list: shows flag emoji + Server name (+ small OpenVPN badge when OpenVPN),
+ * read-only expiry line, GOOD VPN-style live Online/Limit + usage progress bar + TCP ping in ms,
+ * lifetime user count when known, Update (Remote JSON) and Import .myvpn actions, plus Adsterra banner for free users.
  */
 @Composable
 fun ServersScreen(
@@ -62,8 +64,10 @@ fun ServersScreen(
   onSelectServer: (ServerAccountEntity) -> Unit,
   onSyncRemoteClick: () -> Unit,
   isUpdating: Boolean = false,
-  onImportOvpnClick: () -> Unit = {},
-  onDeleteImportedServer: (ServerAccountEntity) -> Unit = {},
+  onImportMyVpnClick: () -> Unit = {},
+  serverPingsMs: Map<Long, Int?> = emptyMap(),
+  showAdsterraBanners: Boolean = true,
+  onOpenBannerLink: (String) -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
   Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
@@ -125,19 +129,19 @@ fun ServersScreen(
           horizontalArrangement = Arrangement.End,
         ) {
           OutlinedButton(
-            onClick = onImportOvpnClick,
+            onClick = onImportMyVpnClick,
             shape = RoundedCornerShape(999.dp),
             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-            modifier = Modifier.testTag("servers_import_ovpn_button"),
+            modifier = Modifier.testTag("servers_import_myvpn_button"),
           ) {
             Icon(
               imageVector = Icons.Default.FileOpen,
-              contentDescription = stringResource(R.string.cd_import_ovpn),
+              contentDescription = stringResource(R.string.cd_import_myvpn),
               modifier = Modifier.size(16.dp),
             )
             Spacer(Modifier.width(6.dp))
             Text(
-              text = stringResource(R.string.action_import_ovpn),
+              text = stringResource(R.string.action_import_myvpn),
               style = MaterialTheme.typography.labelLarge,
             )
           }
@@ -146,7 +150,7 @@ fun ServersScreen(
 
       if (servers.isEmpty()) {
         Box(
-          modifier = Modifier.fillMaxSize().padding(32.dp),
+          modifier = Modifier.weight(1f).fillMaxWidth().padding(32.dp),
           contentAlignment = Alignment.Center,
         ) {
           Column(
@@ -197,8 +201,8 @@ fun ServersScreen(
                 }
               }
               OutlinedButton(
-                onClick = onImportOvpnClick,
-                modifier = Modifier.testTag("servers_empty_import_ovpn_button"),
+                onClick = onImportMyVpnClick,
+                modifier = Modifier.testTag("servers_empty_import_myvpn_button"),
               ) {
                 Icon(
                   imageVector = Icons.Default.FileOpen,
@@ -206,31 +210,34 @@ fun ServersScreen(
                   modifier = Modifier.size(17.dp),
                 )
                 Spacer(Modifier.width(6.dp))
-                Text(stringResource(R.string.action_import_ovpn))
+                Text(stringResource(R.string.action_import_myvpn))
               }
             }
           }
         }
       } else {
         LazyColumn(
-          modifier = Modifier.fillMaxSize(),
-          contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+          modifier = Modifier.weight(1f).fillMaxWidth(),
+          contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
           verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
           items(servers, key = { it.id }) { server ->
             ServerItemCard(
               server = server,
               isSelected = server.id == selectedServerId,
+              pingMs = serverPingsMs[server.id],
               onSelect = { onSelectServer(server) },
-              onDeleteImported =
-                if (server.isUserImported && server.isOpenVpnMode()) {
-                  { onDeleteImportedServer(server) }
-                } else {
-                  null
-                },
             )
           }
         }
+      }
+
+      if (showAdsterraBanners) {
+        Adsterra320x50BannerSlot(
+          onOpenExternalUrl = onOpenBannerLink,
+          bannerTag = "servers_banner_adsterra",
+          modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
       }
     }
   }
@@ -240,8 +247,8 @@ fun ServersScreen(
 private fun ServerItemCard(
   server: ServerAccountEntity,
   isSelected: Boolean,
+  pingMs: Int?,
   onSelect: () -> Unit,
-  onDeleteImported: (() -> Unit)? = null,
 ) {
   val borderColor =
     if (isSelected) MaterialTheme.colorScheme.primary
@@ -250,6 +257,7 @@ private fun ServerItemCard(
   val flag = remember(server.region, server.name) { ServerPingChecker.resolveServerFlagEmoji(server) }
   val (expiryLabel, isExpired) =
     remember(server.expiryDate) { ServerPingChecker.formatRemainingExpiry(server.expiryDate) }
+  val usageFraction = remember(server.onlineCount, server.userLimit) { server.onlineUsageFraction() }
 
   Card(
     shape = RoundedCornerShape(16.dp),
@@ -279,7 +287,7 @@ private fun ServerItemCard(
           Text(text = flag, fontSize = 20.sp)
         }
       }
-      Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+      Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(
           verticalAlignment = Alignment.CenterVertically,
           horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -328,26 +336,53 @@ private fun ServerItemCard(
           overflow = TextOverflow.Ellipsis,
           modifier = Modifier.testTag("server_card_online_limit_${server.id}"),
         )
-      }
-      if (onDeleteImported != null) {
-        IconButton(
-          onClick = onDeleteImported,
-          modifier = Modifier.size(48.dp).testTag("server_delete_${server.id}"),
-        ) {
-          Icon(
-            imageVector = Icons.Default.DeleteOutline,
-            contentDescription = stringResource(R.string.cd_delete_imported_server),
-            tint = MaterialTheme.colorScheme.error,
+        server.formatLifetimeUsersLabel()?.let { usedByLabel ->
+          Text(
+            text = usedByLabel,
+            style = MaterialTheme.typography.labelSmall,
+            fontFamily = MonoFontFamily,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.testTag("server_card_lifetime_users_${server.id}"),
+          )
+        }
+        if (usageFraction != null) {
+          val barColor =
+            when {
+              usageFraction >= 0.9f -> MaterialTheme.colorScheme.error
+              usageFraction >= 0.7f -> MaterialTheme.colorScheme.secondary
+              else -> MaterialTheme.colorScheme.primary
+            }
+          LinearProgressIndicator(
+            progress = { usageFraction },
+            color = barColor,
+            trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+            modifier =
+              Modifier
+                .fillMaxWidth()
+                .height(5.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .testTag("server_card_usage_bar_${server.id}"),
           )
         }
       }
-      if (isSelected) {
-        Icon(
-          imageVector = Icons.Default.CheckCircle,
-          contentDescription = stringResource(R.string.badge_active),
-          tint = MaterialTheme.colorScheme.primary,
-          modifier = Modifier.size(22.dp),
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        ServerPingPill(
+          pingMs = pingMs,
+          testTag = "server_card_ping_${server.id}",
         )
+        if (isSelected) {
+          Icon(
+            imageVector = Icons.Default.CheckCircle,
+            contentDescription = stringResource(R.string.badge_active),
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(22.dp),
+          )
+        }
       }
     }
   }

@@ -66,7 +66,7 @@ import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34], qualifiers = "w412dp-h915dp")
+@Config(sdk = [36], qualifiers = "w412dp-h915dp")
 class InjNoAdsTest {
 
   @get:Rule val composeRule = createComposeRule()
@@ -224,12 +224,14 @@ class InjNoAdsTest {
       }
       composeRule.waitForIdle()
       composeRule.onNodeWithTag("redeem_success_card").assertIsDisplayed()
-      assertNoAdsAnywhereInTree()
+      assertNoAdsterraAdsAnywhereInTree()
+      assertNoOwnerBannerOnScreen()
 
-      // Return Home from Redeem via Back -> ZERO ads on Home (no bottom banners, no own-ad banner, no Extend Time)
+      // Return Home from Redeem via Back -> ZERO Adsterra ads on Home, but own-ad banner STAYS visible
       composeRule.onNodeWithTag("redeem_go_home_button").performClick()
       composeRule.waitForIdle()
-      assertNoAdsAnywhereInTree()
+      assertNoAdsterraAdsAnywhereInTree()
+      assertHomeOwnerBannerVisible()
 
       // Tap Connect on the active INJ server -> NO 7s gate, NO external browser, VPN starts immediately
       composeRule.onNodeWithTag("connect_toggle_button").performScrollTo().performClick()
@@ -238,16 +240,18 @@ class InjNoAdsTest {
       }
       assertEquals(0, openedBrowserUrls.size)
       composeRule.onAllNodesWithTag("ad_gate_dialog", useUnmergedTree = true).assertCountEquals(0)
-      assertNoAdsAnywhereInTree()
+      assertNoAdsterraAdsAnywhereInTree()
+      assertHomeOwnerBannerVisible()
 
-      // Even if paid user picks another server while their active INJ server exists, STILL zero ads & no gate
+      // Even if paid user picks another server while their active INJ server exists, STILL zero Adsterra ads & no gate, own-ad stays
       vpnController.setDisconnected()
       runBlocking { splitRepo.selectServer(freeId) }
       awaitUiCondition("Switched to free server") { viewModel.selectedServer.value?.id == freeId }
       composeRule.waitForIdle()
-      assertNoAdsAnywhereInTree()
+      assertNoAdsterraAdsAnywhereInTree()
+      assertHomeOwnerBannerVisible()
       composeRule.onNodeWithTag("connect_toggle_button").performScrollTo().performClick()
-      awaitUiCondition("Paid INJ user remains ad-free across servers") {
+      awaitUiCondition("Paid INJ user remains Adsterra-free across servers") {
         vpnController.startCount == 2
       }
       assertEquals(0, openedBrowserUrls.size)
@@ -255,29 +259,35 @@ class InjNoAdsTest {
       // Navigate through EVERY screen while paid: Networks -> Servers -> Home -> Settings -> Redeem -> Home
       composeRule.onNodeWithTag("nav_networks").performClick()
       composeRule.waitForIdle()
-      assertNoAdsAnywhereInTree()
+      assertNoAdsterraAdsAnywhereInTree()
+      assertNoOwnerBannerOnScreen()
 
       composeRule.onNodeWithTag("nav_profiles").performClick()
       composeRule.waitForIdle()
-      assertNoAdsAnywhereInTree()
+      assertNoAdsterraAdsAnywhereInTree()
+      assertNoOwnerBannerOnScreen()
 
       composeRule.onNodeWithTag("nav_home").performClick()
       composeRule.waitForIdle()
-      assertNoAdsAnywhereInTree()
+      assertNoAdsterraAdsAnywhereInTree()
+      assertHomeOwnerBannerVisible()
 
       composeRule.onNodeWithTag("home_settings_button").performClick()
       composeRule.waitForIdle()
-      assertNoAdsAnywhereInTree()
+      assertNoAdsterraAdsAnywhereInTree()
+      assertNoOwnerBannerOnScreen()
 
       composeRule.onNodeWithTag("settings_redeem_button").performScrollTo().performClick()
       composeRule.waitForIdle()
-      assertNoAdsAnywhereInTree()
+      assertNoAdsterraAdsAnywhereInTree()
+      assertNoOwnerBannerOnScreen()
 
       composeRule.onNodeWithTag("redeem_back_button").performClick()
       composeRule.waitForIdle()
       composeRule.onNodeWithTag("settings_back_button").performClick()
       composeRule.waitForIdle()
-      assertNoAdsAnywhereInTree()
+      assertNoAdsterraAdsAnywhereInTree()
+      assertHomeOwnerBannerVisible()
 
       // Now remove the INJ redeemed server from DB -> reverts to free mode and ALL ads return
       vpnController.setDisconnected()
@@ -406,18 +416,35 @@ class InjNoAdsTest {
     awaitUiCondition("VPN connects after gate") { vpnController.startCount == 1 }
   }
 
-  private fun assertNoAdsAnywhereInTree() {
+  private fun assertNoAdsterraAdsAnywhereInTree() {
     listOf(
-      "home_owner_banner_card",
-      "home_owner_banner_remote_image",
-      "home_owner_banner_fallback",
       "home_smartlink_bottom_banner",
       "home_adsterra_320x50_banner",
+      "networks_banner_adsterra",
+      "servers_banner_adsterra",
+      "network_sheet_banner_adsterra",
+      "server_sheet_banner_adsterra",
       "home_extend_time_button",
       "ad_gate_dialog",
     ).forEach { tag ->
       composeRule.onAllNodesWithTag(tag, useUnmergedTree = true).assertCountEquals(0)
     }
+  }
+
+  private fun assertNoOwnerBannerOnScreen() {
+    listOf(
+      "home_owner_banner_card",
+      "networks_banner_owner_ad",
+      "servers_banner_owner_ad",
+    ).forEach { tag ->
+      composeRule.onAllNodesWithTag(tag, useUnmergedTree = true).assertCountEquals(0)
+    }
+  }
+
+  private fun assertHomeOwnerBannerVisible() {
+    val lazyList = composeRule.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex))
+    lazyList.performScrollToNode(hasTestTag("home_owner_banner_card"))
+    composeRule.onNodeWithTag("home_owner_banner_card").performScrollTo().assertIsDisplayed()
   }
 
   private fun assertAllHomeAdsPresent() {
@@ -428,8 +455,7 @@ class InjNoAdsTest {
     lazyList.performScrollToNode(hasTestTag("home_owner_banner_card"))
     composeRule.onNodeWithTag("home_owner_banner_card").performScrollTo().assertIsDisplayed()
 
-    lazyList.performScrollToNode(hasTestTag("home_smartlink_bottom_banner"))
-    composeRule.onNodeWithTag("home_smartlink_bottom_banner").performScrollTo().assertIsDisplayed()
+    composeRule.onAllNodesWithTag("home_smartlink_bottom_banner", useUnmergedTree = true).assertCountEquals(0)
 
     lazyList.performScrollToNode(hasTestTag("home_adsterra_320x50_banner"))
     composeRule.onNodeWithTag("home_adsterra_320x50_banner").performScrollTo().assertIsDisplayed()

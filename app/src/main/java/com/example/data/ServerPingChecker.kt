@@ -1,5 +1,7 @@
 package com.example.data
 
+import com.example.openvpn.OvpnConfigParser
+import com.example.openvpn.OvpnSecretStore
 import com.example.vless.VlessConfigParser
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -51,6 +53,19 @@ object ServerPingChecker {
         val port = resolver.substringAfter(':', "53").toIntOrNull()?.takeIf { it in 1..65535 } ?: 53
         if (host.isBlank()) null else host to port
       }
+      ConnectionMode.OPENVPN -> {
+        val decrypted =
+          if (server.ovpnConfigEncrypted.isNotBlank()) {
+            runCatching { OvpnSecretStore.decrypt(server.ovpnConfigEncrypted) }.getOrNull().orEmpty()
+          } else {
+            ""
+          }
+        val parsed =
+          if (decrypted.isNotBlank()) OvpnConfigParser.parse(decrypted).getOrNull() else null
+        val host = parsed?.primaryRemoteHost?.trim().orEmpty().ifBlank { server.host.trim() }
+        val port = parsed?.primaryRemotePort?.takeIf { it in 1..65535 } ?: server.port.takeIf { it in 1..65535 } ?: 1194
+        if (host.isBlank()) null else host to port
+      }
       else -> {
         val host = server.host.trim()
         val port = if (server.port in 1..65535) server.port else ServerAccountEntity.DEFAULT_SSH_PORT
@@ -58,6 +73,12 @@ object ServerPingChecker {
       }
     }
   }
+
+  /**
+   * Formats a measured TCP ping in milliseconds (e.g. `"42 ms"`), or `"—"` when unavailable/offline.
+   */
+  fun formatPingBadge(pingMs: Int?): String =
+    if (pingMs != null && pingMs > 0) "$pingMs ms" else "—"
 
   /**
    * Formats a human-readable Burmese expiry / remaining-days string for the Home card.

@@ -5,6 +5,7 @@ import com.example.config.MyVpnConfigDto
 import com.example.config.NetworkConfigDto
 import com.example.config.ServerAccountDto
 import com.example.membership.OwnerBanner
+import com.example.membership.RemotePriceItem
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -39,6 +40,8 @@ data class SplitRemoteSyncSummary(
   val serversRemoved: Int = 0,
   val replacedAll: Boolean,
   val ownerBanner: OwnerBanner? = null,
+  val prices: List<RemotePriceItem> = emptyList(),
+  val totalAppUsers: Int? = null,
 ) {
   fun toBurmeseMessage(): String {
     return if (replacedAll) {
@@ -150,6 +153,12 @@ class NetworkServerRepository(
 
   suspend fun getAllServersSnapshot(): List<ServerAccountEntity> =
     serverDao.getAllServersSnapshot()
+
+  suspend fun updateServerLifetimeUsersByName(name: String, lifetimeUsers: Int) {
+    if (name.isNotBlank() && lifetimeUsers >= 0) {
+      serverDao.updateLifetimeUsersByName(name, lifetimeUsers)
+    }
+  }
 
   suspend fun selectNetwork(networkId: Long) {
     remoteServerListRepository.saveLastNetworkId(networkId)
@@ -615,6 +624,8 @@ class NetworkServerRepository(
         serversRemoved = 0,
         replacedAll = true,
         ownerBanner = parsed.ownerBanner,
+        prices = parsed.prices,
+        totalAppUsers = parsed.totalAppUsers,
       )
     }
 
@@ -776,6 +787,8 @@ class NetworkServerRepository(
       serversRemoved = serversRemoved,
       replacedAll = false,
       ownerBanner = parsed.ownerBanner,
+      prices = parsed.prices,
+      totalAppUsers = parsed.totalAppUsers,
     )
   }
 
@@ -916,6 +929,7 @@ class NetworkServerRepository(
           isFromRemote = !preserveLocalOwnership,
           onlineCount = incoming.effectiveOnlineCount,
           userLimit = mergedLimit,
+          lifetimeUsers = incoming.effectiveLifetimeUsers ?: existing.lifetimeUsers,
           updatedAt = now,
         )
       }
@@ -941,6 +955,7 @@ class NetworkServerRepository(
         isFromRemote = !preserveLocalOwnership,
         onlineCount = incoming.effectiveOnlineCount,
         userLimit = mergedLimit,
+        lifetimeUsers = incoming.effectiveLifetimeUsers ?: existing.lifetimeUsers,
         updatedAt = now,
       )
     }

@@ -66,7 +66,7 @@ import org.robolectric.annotation.Config
  * 6. Room v5 -> v6 non-destructive migration preserving ownership & Online/Limit columns.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34], qualifiers = "w412dp-h915dp")
+@Config(sdk = [36], qualifiers = "w412dp-h915dp")
 class FixBatchM14Test {
 
   @get:Rule val composeRule = createComposeRule()
@@ -289,8 +289,8 @@ class FixBatchM14Test {
     composeRule.onNodeWithTag("server_sheet_count").assertTextEquals("2")
     composeRule.onNodeWithText("Japan VIP").assertIsDisplayed()
     composeRule.onNodeWithText("Singapore Free").assertIsDisplayed()
-    composeRule.onNodeWithTag("server_sheet_online_limit_1", useUnmergedTree = true).assertTextEquals("Online: 102 | Limit: 150")
-    composeRule.onNodeWithTag("server_sheet_online_limit_2", useUnmergedTree = true).assertTextEquals("Limit: 100")
+    composeRule.onNodeWithTag("server_sheet_online_limit_1", useUnmergedTree = true).assertTextEquals("Online 102 · Limit 150")
+    composeRule.onNodeWithTag("server_sheet_online_limit_2", useUnmergedTree = true).assertTextEquals("Limit 100")
     composeRule.onAllNodesWithText("DataNoPro", substring = true, useUnmergedTree = true).assertCountEquals(0)
   }
 
@@ -401,9 +401,9 @@ class FixBatchM14Test {
         userLimit = 100,
       )
 
-    assertEquals("Online: 102 | Limit: 150", withOnline.formatOnlineLimitLabel())
-    assertEquals("Limit: 100", withoutOnline.formatOnlineLimitLabel())
-    assertFalse(withoutOnline.formatOnlineLimitLabel().contains("Online:"))
+    assertEquals("Online 102 · Limit 150", withOnline.formatOnlineLimitLabel())
+    assertEquals("Limit 100", withoutOnline.formatOnlineLimitLabel())
+    assertFalse(withoutOnline.formatOnlineLimitLabel().contains("Online"))
 
     // Verify rendering on HomeScreen (with free time displayed cleanly on the server row & remaining row)
     val now = 1_764_000_000_000L
@@ -430,7 +430,7 @@ class FixBatchM14Test {
       }
     }
     composeRule.waitForIdle()
-    composeRule.onNodeWithTag("home_server_online_limit_line", useUnmergedTree = true).assertTextEquals("Online: 102 | Limit: 150")
+    composeRule.onNodeWithTag("home_server_online_limit_line", useUnmergedTree = true).assertTextEquals("Online 102 · Limit 150")
     composeRule.onNodeWithTag("home_remaining_time_value", useUnmergedTree = true).assertTextEquals("05:30:00")
     // Secrets remain strictly hidden
     composeRule.onAllNodesWithText("secret-jp.example.com", substring = true, useUnmergedTree = true).assertCountEquals(0)
@@ -453,8 +453,8 @@ class FixBatchM14Test {
       }
     }
     composeRule.waitForIdle()
-    composeRule.onNodeWithTag("server_card_online_limit_1", useUnmergedTree = true).assertTextEquals("Online: 42 | Limit: 100")
-    composeRule.onNodeWithTag("server_card_online_limit_2", useUnmergedTree = true).assertTextEquals("Limit: 100")
+    composeRule.onNodeWithTag("server_card_online_limit_1", useUnmergedTree = true).assertTextEquals("Online 42 · Limit 100")
+    composeRule.onNodeWithTag("server_card_online_limit_2", useUnmergedTree = true).assertTextEquals("Limit 100")
   }
 
   @Test
@@ -668,6 +668,7 @@ class FixBatchM14Test {
           AmktDatabase.MIGRATION_3_4,
           AmktDatabase.MIGRATION_4_5,
           AmktDatabase.MIGRATION_5_6,
+          AmktDatabase.MIGRATION_6_7,
         )
         .allowMainThreadQueries()
         .build()

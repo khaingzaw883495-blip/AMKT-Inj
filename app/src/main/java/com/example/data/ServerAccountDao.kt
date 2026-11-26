@@ -40,6 +40,9 @@ interface ServerAccountDao {
   @Update
   suspend fun updateServer(server: ServerAccountEntity)
 
+  @Query("UPDATE server_accounts SET lifetimeUsers = :lifetimeUsers WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name))")
+  suspend fun updateLifetimeUsersByName(name: String, lifetimeUsers: Int)
+
   @Query("DELETE FROM server_accounts WHERE id = :id")
   suspend fun deleteServerById(id: Long)
 

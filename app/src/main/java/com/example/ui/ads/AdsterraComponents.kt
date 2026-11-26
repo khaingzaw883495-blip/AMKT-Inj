@@ -10,7 +10,6 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,13 +25,10 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -297,81 +293,14 @@ fun ConnectAdGateDialog(
 }
 
 /**
- * Bottom-of-Home Smartlink_2 tap banner that opens [AdsterraConfig.SMARTLINK_URL] in the device's
- * external browser. Sits cleanly at the bottom of Home without covering CONNECT or selection rows.
- */
-@Composable
-fun BottomSmartlinkBannerCard(
-  onOpenSmartlink: (String) -> Unit,
-  modifier: Modifier = Modifier,
-) {
-  Card(
-    shape = RoundedCornerShape(16.dp),
-    colors =
-      CardDefaults.cardColors(
-        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
-      ),
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.55f)),
-    modifier =
-      modifier
-        .fillMaxWidth()
-        .clickable { onOpenSmartlink(AdsterraConfig.SMARTLINK_URL) }
-        .testTag("home_smartlink_bottom_banner"),
-  ) {
-    Row(
-      modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-      Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        modifier = Modifier.size(40.dp),
-      ) {
-        Box(contentAlignment = Alignment.Center) {
-          Icon(
-            imageVector = Icons.Default.Campaign,
-            contentDescription = stringResource(R.string.cd_smartlink_banner),
-            tint = MaterialTheme.colorScheme.onSecondaryContainer,
-            modifier = Modifier.size(20.dp),
-          )
-        }
-      }
-      Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(
-          text = stringResource(R.string.smartlink_banner_title),
-          style = MaterialTheme.typography.titleSmall,
-          fontWeight = FontWeight.Bold,
-          color = MaterialTheme.colorScheme.onSurface,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-          text = stringResource(R.string.smartlink_banner_subtitle),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-        )
-      }
-      Icon(
-        imageVector = Icons.AutoMirrored.Filled.OpenInNew,
-        contentDescription = null,
-        tint = MaterialTheme.colorScheme.secondary,
-        modifier = Modifier.size(18.dp),
-      )
-    }
-  }
-}
-
-/**
- * Compact 320x50 Adsterra banner WebView slot placed at the bottom of Home alongside
- * [BottomSmartlinkBannerCard] and the owner announcement banner.
+ * Compact 320x50 Adsterra banner WebView slot placed at the bottom of Home and, when own-ad is
+ * absent for free users, on Network/Server picker screens.
  */
 @Composable
 fun Adsterra320x50BannerSlot(
   onOpenExternalUrl: (String) -> Unit,
   modifier: Modifier = Modifier,
+  bannerTag: String = "home_adsterra_320x50_banner",
 ) {
   Box(
     modifier = modifier.fillMaxWidth(),
@@ -386,7 +315,7 @@ fun Adsterra320x50BannerSlot(
           .widthIn(max = 320.dp)
           .fillMaxWidth()
           .height(50.dp)
-          .testTag("home_adsterra_320x50_banner"),
+          .testTag(bannerTag),
     ) {
       HardenedBanner320x50WebView(
         onOpenExternalUrl = onOpenExternalUrl,

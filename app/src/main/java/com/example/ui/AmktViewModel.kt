@@ -22,12 +22,14 @@ import com.example.data.PayloadMode
 import com.example.data.ProfileExpiryChecker
 import com.example.data.RemoteServerListRepository
 import com.example.data.ServerAccountEntity
+import com.example.data.ServerPingChecker
 import com.example.data.ServerProfileEntity
 import com.example.data.ServerProfileRepository
 import com.example.dnstt.DnsttValidator
 import com.example.membership.MembershipRepository
 import com.example.membership.OwnerBanner
 import com.example.membership.PassStatus
+import com.example.membership.RemotePriceItem
 import com.example.openvpn.OpenVpnPayloadForwarder
 import com.example.openvpn.OvpnConfigParser
 import com.example.openvpn.OvpnSecretStore
@@ -40,17 +42,21 @@ import com.example.vpn.VpnPreferencesRepository
 import com.example.vpn.VpnProtectionSettings
 import com.example.vpn.VpnTrafficStats
 import com.example.vpn.VpnTunnelState
-import java.nio.charset.StandardCharsets
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -58,12 +64,6 @@ data class RemoteSyncFeedback(
   val message: String,
   val isError: Boolean,
   val timestampMs: Long = System.currentTimeMillis(),
-)
-
-data class PendingOvpnAuthImport(
-  val rawOvpnText: String,
-  val fileName: String?,
-  val suggestedName: String,
 )
 
 class AmktViewModel(
@@ -75,6 +75,9 @@ class AmktViewModel(
   private val logStore: AppLogStore,
   private val networkServerRepository: NetworkServerRepository? = null,
   private val redeemRepository: RedeemRepository? = null,
+  private val pingMeasurer: suspend (ServerAccountEntity) -> Int? = {
+    ServerPingChecker.measureTcpPingMs(it)
+  },
 ) : ViewModel() {
 
   // Legacy single-profile flows (retained for backward compatibility with existing tests)
@@ -169,12 +172,21 @@ class AmktViewModel(
         initialValue = false,
       )
 
-  val hasActiveRedeemedServer: StateFlow<Boolean> =
+  val activeRedeemedServer: StateFlow<ServerAccountEntity?> =
     servers
       .map { list ->
         val today = membershipRepository.currentLocalYmd()
-        list.any { it.isRedeemedServer() && !it.isExpired(today) }
+        list.firstOrNull { it.isRedeemedServer() && !it.isExpired(today) }
       }
+      .stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = null,
+      )
+
+  val hasActiveRedeemedServer: StateFlow<Boolean> =
+    activeRedeemedServer
+      .map { it != null }
       .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -201,6 +213,20 @@ class AmktViewModel(
 
   val ownerBanner: StateFlow<OwnerBanner?> =
     membershipRepository.ownerBannerFlow.stateIn(
+      scope = viewModelScope,
+      started = SharingStarted.WhileSubscribed(5_000),
+      initialValue = null,
+    )
+
+  val remotePrices: StateFlow<List<RemotePriceItem>> =
+    membershipRepository.remotePricesFlow.stateIn(
+      scope = viewModelScope,
+      started = SharingStarted.WhileSubscribed(5_000),
+      initialValue = emptyList(),
+    )
+
+  val totalAppUsers: StateFlow<Int?> =
+    membershipRepository.totalAppUsersFlow.stateIn(
       scope = viewModelScope,
       started = SharingStarted.WhileSubscribed(5_000),
       initialValue = null,
@@ -269,18 +295,62 @@ class AmktViewModel(
 
   private val _isDarkTheme = MutableStateFlow(true)
   val isDarkTheme: StateFlow<Boolean> = _isDarkTheme.asStateFlow()
+  @Volatile private var userToggledThemeInSession = false
 
-  private val _pendingOvpnAuthImport = MutableStateFlow<PendingOvpnAuthImport?>(null)
-  val pendingOvpnAuthImport: StateFlow<PendingOvpnAuthImport?> = _pendingOvpnAuthImport.asStateFlow()
+  private val _serverPingsMs = MutableStateFlow<Map<Long, Int?>>(emptyMap())
+  val serverPingsMs: StateFlow<Map<Long, Int?>> = _serverPingsMs.asStateFlow()
+  private var serverPingJob: Job? = null
 
   init {
     viewModelScope.launch {
+      val initialDark = vpnPreferencesRepository.currentSettings().darkThemeEnabled
+      if (!userToggledThemeInSession) {
+        _isDarkTheme.value = initialDark
+      }
       networkServerRepository?.initializeOnLaunch()
+    }
+    viewModelScope.launch(Dispatchers.IO) {
+      membershipRepository.reportFirstLaunchUsageIfNeeded()
+    }
+    viewModelScope.launch {
+      servers.collectLatest { serverList ->
+        measureAllServerPings(serverList)
+      }
     }
   }
 
   fun toggleTheme() {
-    _isDarkTheme.value = !_isDarkTheme.value
+    userToggledThemeInSession = true
+    val next = !_isDarkTheme.value
+    _isDarkTheme.value = next
+    viewModelScope.launch {
+      vpnPreferencesRepository.setDarkThemeEnabled(next)
+    }
+  }
+
+  fun refreshServerPings() {
+    val snapshot = servers.value
+    serverPingJob?.cancel()
+    serverPingJob = viewModelScope.launch {
+      measureAllServerPings(snapshot)
+    }
+  }
+
+  private suspend fun measureAllServerPings(targetServers: List<ServerAccountEntity>) {
+    if (targetServers.isEmpty()) {
+      _serverPingsMs.value = emptyMap()
+      return
+    }
+    val validIds = targetServers.map { it.id }.toSet()
+    _serverPingsMs.update { existing -> existing.filterKeys { it in validIds } }
+    coroutineScope {
+      targetServers.forEach { srv ->
+        async(Dispatchers.IO) {
+          val measured = runCatching { pingMeasurer(srv) }.getOrNull()
+          _serverPingsMs.update { current -> current + (srv.id to measured) }
+        }
+      }
+    }
   }
 
   fun setModeFilter(mode: ConnectionMode?) {
@@ -469,122 +539,6 @@ class AmktViewModel(
       )
       _snackbarMessage.value = "ဆာဗာ ဖျက်ပြီးပါပြီ"
     }
-  }
-
-  /**
-   * Deletes a user-imported `.ovpn` server profile. Remote JSON servers cannot be deleted.
-   */
-  fun deleteUserImportedServer(server: ServerAccountEntity) {
-    val repo = networkServerRepository ?: return
-    if (!server.isUserImported || !server.isOpenVpnMode()) return
-    viewModelScope.launch {
-      val deleted = repo.deleteUserImportedServer(server.id)
-      if (deleted) {
-        logStore.append(
-          tag = "OPENVPN",
-          message = "ထည့်သွင်းထားသော OpenVPN ဆာဗာ ဖျက်လိုက်ပြီး: ${server.name}",
-          level = LogLevel.WARNING,
-        )
-        _snackbarMessage.value = "OpenVPN ဆာဗာ ဖျက်ပြီးပါပြီ"
-      }
-    }
-  }
-
-  /**
-   * Parses a user-selected `.ovpn` file. If `auth-user-pass` is required without inline
-   * credentials, prompts the user once via [pendingOvpnAuthImport]; otherwise encrypts and saves
-   * the OpenVPN profile immediately. Never logs `.ovpn` contents or credentials.
-   */
-  fun beginOvpnFileImport(rawBytes: ByteArray, fileName: String?) {
-    val repo = networkServerRepository ?: return
-    viewModelScope.launch {
-      val rawText =
-        withContext(Dispatchers.Default) { String(rawBytes, StandardCharsets.UTF_8) }
-      val parsed =
-        withContext(Dispatchers.Default) { OvpnConfigParser.parse(rawText) }.getOrElse { err ->
-          val reason = err.message ?: ".ovpn ဖိုင် ပုံစံ မမှန်ကန်ပါ"
-          logStore.append(
-            tag = "OPENVPN",
-            message = ".ovpn ဖိုင် ထည့်သွင်းမရပါ: $reason",
-            level = LogLevel.ERROR,
-          )
-          _snackbarMessage.value = ".ovpn ဖိုင် ဖတ်မရပါ — $reason"
-          return@launch
-        }
-
-      if (parsed.requiresAuthUserPass) {
-        val suggested = OvpnConfigParser.resolveProfileName(fileName, parsed)
-        _pendingOvpnAuthImport.value =
-          PendingOvpnAuthImport(
-            rawOvpnText = parsed.rawConfig,
-            fileName = fileName,
-            suggestedName = suggested,
-          )
-        return@launch
-      }
-
-      val result =
-        repo.importOvpnProfile(
-          rawOvpnText = parsed.rawConfig,
-          fileName = fileName,
-          selectAfterImport = true,
-        )
-      result.fold(
-        onSuccess = { stored ->
-          logStore.append(
-            tag = "OPENVPN",
-            message = "OpenVPN ဆာဗာ ထည့်သွင်းပြီး: ${stored.name}",
-            level = LogLevel.SUCCESS,
-          )
-          _snackbarMessage.value = "OpenVPN ဆာဗာ ထည့်သွင်းပြီးပါပြီ: ${stored.name}"
-        },
-        onFailure = { err ->
-          val reason = err.message ?: ".ovpn ဖိုင် ထည့်သွင်းမရပါ"
-          logStore.append(tag = "OPENVPN", message = reason, level = LogLevel.ERROR)
-          _snackbarMessage.value = ".ovpn ဖိုင် ဖတ်မရပါ — $reason"
-        },
-      )
-    }
-  }
-
-  fun completePendingOvpnAuthImport(username: String, password: String) {
-    val repo = networkServerRepository ?: return
-    val pending = _pendingOvpnAuthImport.value ?: return
-    val cleanUser = username.trim()
-    if (cleanUser.isBlank()) {
-      _snackbarMessage.value = "OpenVPN Username ထည့်သွင်းပါ"
-      return
-    }
-    _pendingOvpnAuthImport.value = null
-    viewModelScope.launch {
-      val result =
-        repo.importOvpnProfile(
-          rawOvpnText = pending.rawOvpnText,
-          fileName = pending.fileName,
-          username = cleanUser,
-          password = password,
-          selectAfterImport = true,
-        )
-      result.fold(
-        onSuccess = { stored ->
-          logStore.append(
-            tag = "OPENVPN",
-            message = "OpenVPN ဆာဗာ ထည့်သွင်းပြီး: ${stored.name}",
-            level = LogLevel.SUCCESS,
-          )
-          _snackbarMessage.value = "OpenVPN ဆာဗာ ထည့်သွင်းပြီးပါပြီ: ${stored.name}"
-        },
-        onFailure = { err ->
-          val reason = err.message ?: ".ovpn ဖိုင် ထည့်သွင်းမရပါ"
-          logStore.append(tag = "OPENVPN", message = reason, level = LogLevel.ERROR)
-          _snackbarMessage.value = ".ovpn ဖိုင် ဖတ်မရပါ — $reason"
-        },
-      )
-    }
-  }
-
-  fun cancelPendingOvpnAuthImport() {
-    _pendingOvpnAuthImport.value = null
   }
 
   suspend fun loadServerById(id: Long): ServerAccountEntity? =
@@ -941,6 +895,15 @@ class AmktViewModel(
       killSwitch = settings.killSwitchEnabled,
       autoReconnect = settings.autoReconnectEnabled,
     )
+    viewModelScope.launch(Dispatchers.IO) {
+      val usageResult = membershipRepository.reportUsagePing(serverName = server.name, event = "connect")
+      val updatedLifetime = usageResult?.serverLifetimeUsers
+      if (updatedLifetime != null && updatedLifetime >= 0) {
+        runCatching {
+          networkServerRepository?.updateServerLifetimeUsersByName(server.name, updatedLifetime)
+        }
+      }
+    }
   }
 
   private suspend fun hasActiveRedeemedServerNow(todayYmd: Int): Boolean {
@@ -1142,7 +1105,7 @@ class AmktViewModel(
       if (parsedOvpn.isFailure) {
         val msg =
           parsedOvpn.exceptionOrNull()?.message
-            ?: "OpenVPN (.ovpn) Config အချက်အလက် မမှန်ကန်ပါ"
+            ?: "OpenVPN Config အချက်အလက် မမှန်ကန်ပါ"
         logStore.append(tag = "CHECK", message = "သတိပေးချက်: $msg", level = LogLevel.WARNING)
         _snackbarMessage.value = msg
         return null
@@ -1151,7 +1114,7 @@ class AmktViewModel(
         val decryptedUser =
           runCatching { OvpnSecretStore.decrypt(active.username) }.getOrNull().orEmpty()
         if (decryptedUser.isBlank()) {
-          val msg = "OpenVPN အတွက် Username/Password မပြည့်စုံပါ — .ovpn ဖိုင်ကို ပြန်ထည့်သွင်းပါ"
+          val msg = "OpenVPN အတွက် Username/Password မပြည့်စုံပါ — Update နှိပ်၍ စာရင်းပြန်ဆွဲယူပါ"
           logStore.append(tag = "CHECK", message = "သတိပေးချက်: $msg", level = LogLevel.WARNING)
           _snackbarMessage.value = msg
           return null
@@ -1479,6 +1442,10 @@ class AmktViewModel(
       result.fold(
         onSuccess = { summary ->
           membershipRepository.saveOwnerBanner(summary.ownerBanner)
+          membershipRepository.saveRemotePrices(summary.prices)
+          if (summary.totalAppUsers != null) {
+            membershipRepository.saveTotalAppUsers(summary.totalAppUsers)
+          }
           logStore.append(tag = "REMOTE", message = summary.toBurmeseMessage(), level = LogLevel.SUCCESS)
           val shortConfirmation = "Update Finished"
           _remoteSyncFeedback.value = RemoteSyncFeedback(message = shortConfirmation, isError = false)
@@ -1589,6 +1556,9 @@ class AmktViewModel(
     private val logStore: AppLogStore,
     private val networkServerRepository: NetworkServerRepository? = null,
     private val redeemRepository: RedeemRepository? = null,
+    private val pingMeasurer: suspend (ServerAccountEntity) -> Int? = {
+      ServerPingChecker.measureTcpPingMs(it)
+    },
   ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -1601,6 +1571,7 @@ class AmktViewModel(
         logStore = logStore,
         networkServerRepository = networkServerRepository,
         redeemRepository = redeemRepository,
+        pingMeasurer = pingMeasurer,
       ) as T
     }
   }

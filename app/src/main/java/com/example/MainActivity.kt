@@ -66,7 +66,6 @@ import com.example.ui.AmktViewModel
 import com.example.ui.ads.ConnectAdGateDialog
 import com.example.ui.home.HomeScreen
 import com.example.ui.networks.NetworksScreen
-import com.example.ui.profiles.OvpnAuthCredentialsDialog
 import com.example.ui.profiles.ServersScreen
 import com.example.ui.redeem.RedeemCodeScreen
 import com.example.ui.settings.SettingsScreen
@@ -163,22 +162,25 @@ internal fun AmktInjectorApp(
   val vpnTrafficStats by viewModel.vpnTrafficStats.collectAsStateWithLifecycle()
   val vpnSettings by viewModel.vpnSettings.collectAsStateWithLifecycle()
   val ownerBanner by viewModel.ownerBanner.collectAsStateWithLifecycle()
+  val remotePrices by viewModel.remotePrices.collectAsStateWithLifecycle()
+  val totalAppUsers by viewModel.totalAppUsers.collectAsStateWithLifecycle()
   val hasValidNoAdsPass by viewModel.hasValidNoAdsPass.collectAsStateWithLifecycle()
+  val activeRedeemedServer by viewModel.activeRedeemedServer.collectAsStateWithLifecycle()
   val hasActiveRedeemedServer by viewModel.hasActiveRedeemedServer.collectAsStateWithLifecycle()
   val freeTimeStatus by viewModel.freeTimeStatus.collectAsStateWithLifecycle()
+  val serverPingsMs by viewModel.serverPingsMs.collectAsStateWithLifecycle()
   val isFetchingRemoteServers by viewModel.isFetchingRemoteServers.collectAsStateWithLifecycle()
   val remoteSyncFeedback by viewModel.remoteSyncFeedback.collectAsStateWithLifecycle()
   val isRedeemingCode by viewModel.isRedeemingCode.collectAsStateWithLifecycle()
   val redeemOutcome by viewModel.redeemOutcome.collectAsStateWithLifecycle()
   val snackbarMessage by viewModel.snackbarMessage.collectAsStateWithLifecycle()
   val isDarkTheme by viewModel.isDarkTheme.collectAsStateWithLifecycle()
-  val pendingOvpnAuthImport by viewModel.pendingOvpnAuthImport.collectAsStateWithLifecycle()
 
   var pendingVpnRequest by remember { mutableStateOf<PendingCombinedVpnRequest?>(null) }
   var pendingAdGateTask by remember { mutableStateOf<PendingAdGateTask?>(null) }
   var askedNotificationPermission by remember { mutableStateOf(false) }
 
-  val ovpnImportLauncher =
+  val myVpnImportLauncher =
     rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
       if (uri == null) return@rememberLauncherForActivityResult
       try {
@@ -190,14 +192,18 @@ internal fun AmktInjectorApp(
             } ?: uri.lastPathSegment
         val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
         if (bytes == null || bytes.isEmpty()) {
-          viewModel.notifyMessage(".ovpn ဖိုင် ဗလာဖြစ်နေပါသည်")
+          viewModel.notifyMessage(".myvpn ဖိုင် ဗလာဖြစ်နေပါသည်")
         } else {
-          viewModel.beginOvpnFileImport(rawBytes = bytes, fileName = displayName)
+          viewModel.importFromBytes(rawBytes = bytes, fileName = displayName)
         }
       } catch (_: Exception) {
-        viewModel.notifyMessage(".ovpn ဖိုင် ဖတ်မရပါ")
+        viewModel.notifyMessage(".myvpn ဖိုင် ဖတ်မရပါ")
       }
     }
+
+  fun openMyVpnFilePicker() {
+    myVpnImportLauncher.launch(arrayOf("application/octet-stream", "*/*"))
+  }
 
   val notificationPermissionLauncher =
     rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { _ ->
@@ -218,14 +224,6 @@ internal fun AmktInjectorApp(
         viewModel.onVpnPermissionDenied()
       }
     }
-
-  pendingOvpnAuthImport?.let { pending ->
-    OvpnAuthCredentialsDialog(
-      profileName = pending.suggestedName,
-      onConfirm = { user, pass -> viewModel.completePendingOvpnAuthImport(user, pass) },
-      onDismiss = { viewModel.cancelPendingOvpnAuthImport() },
-    )
-  }
 
   fun proceedWithVpnPermissionAndStart(request: PendingCombinedVpnRequest) {
     if (
@@ -500,23 +498,24 @@ internal fun AmktInjectorApp(
               onRefreshServersClick = { triggerRemoteUpdate() },
               onDismissRemoteSyncFeedback = viewModel::clearRemoteSyncFeedback,
               onOpenBannerLink = { url ->
-                try {
-                  val parsed = Uri.parse(url)
-                  if (parsed.scheme == "https" || parsed.scheme == "http") {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, parsed))
-                  }
-                } catch (_: Exception) {
+                val ok = adGateOpenBrowserOverride?.invoke(url) ?: openExternalHttpUrl(url)
+                if (!ok) {
                   viewModel.notifyMessage("လင့်ခ်ဖွင့်မရပါ")
                 }
               },
               onClearNetwork = viewModel::clearSelectedNetwork,
               showAdsterraBanners = !hasValidNoAdsPass && !hasActiveRedeemedServer,
-              showOwnerBanner = !hasActiveRedeemedServer,
+              showOwnerBanner = true,
               freeTimeStatus = freeTimeStatus,
               hasValidNoAdsPass = hasValidNoAdsPass,
               hasActiveRedeemedServer = hasActiveRedeemedServer,
+              serverPingsMs = serverPingsMs,
+              onRefreshPings = viewModel::refreshServerPings,
+              onImportMyVpnClick = { openMyVpnFilePicker() },
               nowEpochMsProvider = viewModel::currentEpochMs,
               onExtendTimeClick = { launchExtendTimeFlow() },
+              totalAppUsers = totalAppUsers,
+              activeRedeemedServer = activeRedeemedServer,
             )
           }
 
@@ -527,27 +526,35 @@ internal fun AmktInjectorApp(
               onSelectNetwork = viewModel::selectNetwork,
               onUpdateClick = { triggerRemoteUpdate() },
               isUpdating = isFetchingRemoteServers,
+              showAdsterraBanners = !hasValidNoAdsPass && !hasActiveRedeemedServer,
+              onOpenBannerLink = { url ->
+                val ok = adGateOpenBrowserOverride?.invoke(url) ?: openExternalHttpUrl(url)
+                if (!ok) {
+                  viewModel.notifyMessage("လင့်ခ်ဖွင့်မရပါ")
+                }
+              },
             )
           }
 
           composable(ROUTE_SERVERS) {
+            LaunchedEffect(servers) {
+              viewModel.refreshServerPings()
+            }
             ServersScreen(
               servers = servers,
               selectedServerId = selectedServer?.id,
               onSelectServer = viewModel::selectServer,
               onSyncRemoteClick = { triggerRemoteUpdate() },
               isUpdating = isFetchingRemoteServers,
-              onImportOvpnClick = {
-                ovpnImportLauncher.launch(
-                  arrayOf(
-                    "application/x-openvpn-profile",
-                    "application/octet-stream",
-                    "text/plain",
-                    "*/*",
-                  )
-                )
+              onImportMyVpnClick = { openMyVpnFilePicker() },
+              serverPingsMs = serverPingsMs,
+              showAdsterraBanners = !hasValidNoAdsPass && !hasActiveRedeemedServer,
+              onOpenBannerLink = { url ->
+                val ok = adGateOpenBrowserOverride?.invoke(url) ?: openExternalHttpUrl(url)
+                if (!ok) {
+                  viewModel.notifyMessage("လင့်ခ်ဖွင့်မရပါ")
+                }
               },
-              onDeleteImportedServer = viewModel::deleteUserImportedServer,
             )
           }
 
@@ -571,6 +578,7 @@ internal fun AmktInjectorApp(
               onRedeemSubmit = viewModel::redeemBuyerCode,
               onClearOutcome = viewModel::clearRedeemOutcome,
               onNavigateBack = { navController.popBackStack() },
+              remotePrices = remotePrices,
             )
           }
         }

@@ -1,6 +1,8 @@
 package com.example
 
 import android.app.Application
+import coil.ImageLoader
+import coil.ImageLoaderFactory
 import com.example.analytics.AppAnalyticsInitializer
 import com.example.config.ConfigFileCodec
 import com.example.config.NativeKeyBridge
@@ -23,8 +25,10 @@ import com.example.vless.VlessTunnelEngine
 import com.example.vpn.AndroidVpnEngineController
 import com.example.vpn.VpnEngineController
 import com.example.vpn.VpnPreferencesRepository
+import java.util.concurrent.TimeUnit
+import okhttp3.OkHttpClient
 
-class AmktApplication : Application() {
+class AmktApplication : Application(), ImageLoaderFactory {
   lateinit var database: AmktDatabase
     private set
 
@@ -93,7 +97,7 @@ class AmktApplication : Application() {
 
     logStore.append(
       tag = "BOOT",
-      message = "AMKT Injector (v1.0.0-m17 — SSH/Payload/DNSTT/VLESS/OpenVPN + VPN) စတင်ဖွင့်လှစ်ပြီးပါပြီ",
+      message = "AMKT Injector (v1.0.0-m20 — SSH/Payload/DNSTT/VLESS/OpenVPN + VPN) စတင်ဖွင့်လှစ်ပြီးပါပြီ",
       level = LogLevel.INFO,
     )
     val cryptoBackend =
@@ -104,5 +108,31 @@ class AmktApplication : Application() {
       message = ".myvpn AES-256-GCM Key Bridge: $cryptoBackend",
       level = LogLevel.SUCCESS,
     )
+  }
+
+  override fun newImageLoader(): ImageLoader {
+    val imageOkHttp =
+      OkHttpClient.Builder()
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
+        .addInterceptor { chain ->
+          val orig = chain.request()
+          val req =
+            orig.newBuilder()
+              .header(
+                "User-Agent",
+                "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36",
+              )
+              .header("Accept", "image/*,*/*;q=0.8")
+              .build()
+          chain.proceed(req)
+        }
+        .build()
+    return ImageLoader.Builder(this)
+      .okHttpClient(imageOkHttp)
+      .crossfade(true)
+      .build()
   }
 }

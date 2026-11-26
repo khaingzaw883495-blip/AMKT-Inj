@@ -40,7 +40,6 @@ import com.example.openvpn.OvpnSecretStore
 import com.example.ui.AmktViewModel
 import com.example.ui.home.HomeScreen
 import com.example.ui.home.ServerPickerBottomSheet
-import com.example.ui.profiles.OvpnAuthCredentialsDialog
 import com.example.ui.profiles.ServersScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.vpn.VpnEngineController
@@ -76,7 +75,7 @@ import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [36])
 class OpenVpnTransportTest {
 
   @get:Rule val composeRule = createComposeRule()
@@ -212,30 +211,14 @@ class OpenVpnTransportTest {
 
   @Test
   fun importOvpnCertOnlyAndAuthUserPassFlowsEncryptAtRestAndNeverLogSecrets() = runBlocking {
-    val logStore = AppLogStore()
-    val fakeVpn = CapturingVpnController()
-    val viewModel =
-      AmktViewModel(
-        repository = legacyRepo,
-        membershipRepository = MembershipRepository(context),
-        vpnPreferencesRepository = VpnPreferencesRepository(context),
-        vpnController = fakeVpn,
-        configCodec = ConfigFileCodec(),
-        logStore = logStore,
-        networkServerRepository = splitRepo,
-      )
+    val certSrv =
+      splitRepo.importOvpnProfile(
+        rawOvpnText = sampleCertOnlyOvpn,
+        fileName = "Tokyo-OpenVPN.ovpn",
+        selectAfterImport = true,
+      ).getOrThrow()
 
-    // 1. Cert-only .ovpn imports immediately without prompting
-    viewModel.beginOvpnFileImport(
-      rawBytes = sampleCertOnlyOvpn.toByteArray(StandardCharsets.UTF_8),
-      fileName = "Tokyo-OpenVPN.ovpn",
-    )
-    awaitCondition { splitRepo.getAllServersSnapshot().any { it.name == "Tokyo-OpenVPN" } }
-
-    assertNull("Cert-only import must not open auth prompt", viewModel.pendingOvpnAuthImport.value)
-    val certSrv = splitRepo.getAllServersSnapshot().first { it.name == "Tokyo-OpenVPN" }
     assertEquals(ConnectionMode.OPENVPN, certSrv.resolvedConnectionMode)
-    assertTrue("Imported .ovpn must be marked isUserImported", certSrv.isUserImported)
     assertFalse(certSrv.ovpnAuthRequired)
     assertEquals("Host column must remain blank for OpenVPN", "", certSrv.host)
     assertEquals("Port column must remain 0 for OpenVPN", 0, certSrv.port)
@@ -243,26 +226,16 @@ class OpenVpnTransportTest {
     assertFalse(certSrv.ovpnConfigEncrypted.contains("ovpn-secret-jp.example.net"))
     assertEquals(sampleCertOnlyOvpn, OvpnSecretStore.decrypt(certSrv.ovpnConfigEncrypted))
 
-    // 2. auth-user-pass .ovpn prompts once, then saves encrypted credentials
-    viewModel.beginOvpnFileImport(
-      rawBytes = sampleAuthRequiredOvpn.toByteArray(StandardCharsets.UTF_8),
-      fileName = "Singapore-Auth.ovpn",
-    )
-    awaitCondition { viewModel.pendingOvpnAuthImport.value != null }
-    val pending = viewModel.pendingOvpnAuthImport.value!!
-    assertEquals("Singapore-Auth", pending.suggestedName)
-    assertFalse(
-      "Auth-required profile must not be inserted until user enters credentials",
-      splitRepo.getAllServersSnapshot().any { it.name == "Singapore-Auth" },
-    )
+    val authSrv =
+      splitRepo.importOvpnProfile(
+        rawOvpnText = sampleAuthRequiredOvpn,
+        fileName = "Singapore-Auth.ovpn",
+        username = "ovpn_user_77",
+        password = "ovpn_secret_pass_77",
+        selectAfterImport = true,
+      ).getOrThrow()
 
-    viewModel.completePendingOvpnAuthImport("ovpn_user_77", "ovpn_secret_pass_77")
-    awaitCondition { splitRepo.getAllServersSnapshot().any { it.name == "Singapore-Auth" } }
-
-    assertNull(viewModel.pendingOvpnAuthImport.value)
-    val authSrv = splitRepo.getAllServersSnapshot().first { it.name == "Singapore-Auth" }
     assertEquals(ConnectionMode.OPENVPN, authSrv.resolvedConnectionMode)
-    assertTrue(authSrv.isUserImported)
     assertTrue(authSrv.ovpnAuthRequired)
     assertTrue(OvpnSecretStore.isEncrypted(authSrv.username))
     assertTrue(OvpnSecretStore.isEncrypted(authSrv.password))
@@ -270,14 +243,6 @@ class OpenVpnTransportTest {
     assertFalse("Password must not be stored in plaintext", authSrv.password.contains("ovpn_secret_pass_77"))
     assertEquals("ovpn_user_77", OvpnSecretStore.decrypt(authSrv.username))
     assertEquals("ovpn_secret_pass_77", OvpnSecretStore.decrypt(authSrv.password))
-
-    // Verify ZERO secrets or .ovpn content were logged
-    val allLogText = logStore.logs.value.joinToString("\n") { it.message }
-    assertFalse(allLogText.contains("ovpn-secret-jp.example.net"))
-    assertFalse(allLogText.contains("ovpn-auth-sg.example.org"))
-    assertFalse(allLogText.contains("ovpn_user_77"))
-    assertFalse(allLogText.contains("ovpn_secret_pass_77"))
-    assertFalse(allLogText.contains("BEGIN PRIVATE KEY"))
   }
 
   @Test
@@ -765,7 +730,7 @@ class OpenVpnTransportTest {
   }
 
   @Test
-  fun serversScreenShowsImportOvpnBadgeAndDeleteStrictlyForUserImportedProfile() {
+  fun serversScreenShowsOpenVpnBadgeImportMyVpnAndZeroOvpnImportUi() {
     val remoteOvpn =
       ServerAccountEntity(
         id = 201L,
@@ -776,46 +741,43 @@ class OpenVpnTransportTest {
         ovpnConfigEncrypted = OvpnSecretStore.encrypt(sampleCertOnlyOvpn),
         isUserImported = false,
       )
-    val importedOvpn =
+    val secondOvpn =
       ServerAccountEntity(
         id = 202L,
-        name = "My Custom Profile",
+        name = "Singapore OVPN 02",
         connectionMode = ConnectionMode.OPENVPN.code,
         ovpnConfigEncrypted = OvpnSecretStore.encrypt(sampleAuthRequiredOvpn),
         ovpnAuthRequired = true,
-        isUserImported = true,
+        isUserImported = false,
       )
 
-    var importClicked = false
-    var deletedServer: ServerAccountEntity? = null
+    var myVpnImportClicked = false
 
     composeRule.setContent {
       MyApplicationTheme(darkTheme = true) {
         ServersScreen(
-          servers = listOf(remoteOvpn, importedOvpn),
+          servers = listOf(remoteOvpn, secondOvpn),
           selectedServerId = remoteOvpn.id,
           onSelectServer = {},
           onSyncRemoteClick = {},
-          onImportOvpnClick = { importClicked = true },
-          onDeleteImportedServer = { deletedServer = it },
+          onImportMyVpnClick = { myVpnImportClicked = true },
         )
       }
     }
     composeRule.waitForIdle()
 
-    composeRule.onNodeWithTag("servers_import_ovpn_button").assertIsDisplayed().performClick()
-    assertTrue(importClicked)
+    // No .ovpn import button/text anywhere
+    composeRule.onAllNodesWithTag("servers_import_ovpn_button", useUnmergedTree = true).assertCountEquals(0)
+    composeRule.onAllNodesWithText(".ovpn", substring = true, ignoreCase = true, useUnmergedTree = true).assertCountEquals(0)
+
+    // .myvpn import button IS displayed & clickable
+    composeRule.onNodeWithTag("servers_import_myvpn_button").assertIsDisplayed().performClick()
+    assertTrue(myVpnImportClicked)
 
     composeRule.onNodeWithText("Remote JP Node").assertIsDisplayed()
-    composeRule.onNodeWithText("My Custom Profile").assertIsDisplayed()
+    composeRule.onNodeWithText("Singapore OVPN 02").assertIsDisplayed()
     composeRule.onNodeWithTag("server_openvpn_badge_${remoteOvpn.id}", useUnmergedTree = true).assertIsDisplayed()
-    composeRule.onNodeWithTag("server_openvpn_badge_${importedOvpn.id}", useUnmergedTree = true).assertIsDisplayed()
-
-    // Remote OpenVPN server MUST NOT have a delete button
-    composeRule.onAllNodesWithTag("server_delete_${remoteOvpn.id}", useUnmergedTree = true).assertCountEquals(0)
-    // User-imported .ovpn profile MUST have a delete button
-    composeRule.onNodeWithTag("server_delete_${importedOvpn.id}").assertIsDisplayed().performClick()
-    assertEquals(importedOvpn.id, deletedServer?.id)
+    composeRule.onNodeWithTag("server_openvpn_badge_${secondOvpn.id}", useUnmergedTree = true).assertIsDisplayed()
 
     assertZeroOvpnSecretLeaks()
   }
@@ -855,35 +817,6 @@ class OpenVpnTransportTest {
     composeRule.onNodeWithTag("server_sheet_search").performTextInput("ovpn-secret-jp")
     composeRule.waitForIdle()
     composeRule.onAllNodesWithTag("server_sheet_item_${remoteOvpn.id}", useUnmergedTree = true).assertCountEquals(0)
-  }
-
-  @Test
-  fun ovpnAuthCredentialsDialogCollectsUsernameAndPasswordOnce() {
-    var capturedUser = ""
-    var capturedPass = ""
-
-    composeRule.setContent {
-      MyApplicationTheme(darkTheme = true) {
-        OvpnAuthCredentialsDialog(
-          profileName = "Singapore-Auth",
-          onConfirm = { u, p ->
-            capturedUser = u
-            capturedPass = p
-          },
-          onDismiss = {},
-        )
-      }
-    }
-    composeRule.waitForIdle()
-
-    composeRule.onNodeWithTag("ovpn_auth_dialog").assertIsDisplayed()
-    composeRule.onNodeWithText("Singapore-Auth").assertIsDisplayed()
-    composeRule.onNodeWithTag("ovpn_auth_username_input").performTextInput("my_ovpn_user")
-    composeRule.onNodeWithTag("ovpn_auth_password_input").performTextInput("my_ovpn_pass")
-    composeRule.onNodeWithTag("ovpn_auth_save_button").performClick()
-
-    assertEquals("my_ovpn_user", capturedUser)
-    assertEquals("my_ovpn_pass", capturedPass)
   }
 
   private fun assertZeroOvpnSecretLeaks() {

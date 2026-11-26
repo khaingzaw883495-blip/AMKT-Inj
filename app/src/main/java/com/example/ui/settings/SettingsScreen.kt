@@ -13,8 +13,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ConfirmationNumber
@@ -91,14 +92,17 @@ fun SettingsScreen(
       modifier = Modifier.fillMaxSize().padding(innerPadding),
       contentAlignment = Alignment.TopCenter,
     ) {
-      LazyColumn(
-        modifier = Modifier.fillMaxWidth().widthIn(max = 640.dp),
-        contentPadding = PaddingValues(16.dp),
+      Column(
+        modifier =
+          Modifier
+            .fillMaxWidth()
+            .widthIn(max = 640.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
       ) {
         // 1. VPN Protection (Kill Switch + Auto-Reconnect)
-        item {
-          Card(
+        Card(
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -175,12 +179,10 @@ fun SettingsScreen(
                 )
               }
             }
-          }
         }
 
         // 2. Appearance (Dark Mode toggle)
-        item {
-          Card(
+        Card(
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -230,12 +232,10 @@ fun SettingsScreen(
                 )
               }
             }
-          }
         }
 
         // 3. Buyer Redeem Code shortcut
-        item {
-          Card(
+        Card(
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -280,7 +280,6 @@ fun SettingsScreen(
                 Text(stringResource(R.string.redeem_button_short))
               }
             }
-          }
         }
       }
     }

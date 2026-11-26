@@ -54,8 +54,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.example.R
+import com.example.membership.RemotePriceItem
 import com.example.redeem.RedeemOutcome
 import com.example.ui.components.ExpiryBadge
+import com.example.ui.components.RemotePricesCard
 import com.example.ui.theme.DisplayFontFamily
 import com.example.ui.theme.MonoFontFamily
 
@@ -68,6 +70,7 @@ fun RedeemCodeScreen(
   onRedeemSubmit: (String) -> Unit,
   onClearOutcome: () -> Unit,
   onNavigateBack: () -> Unit,
+  remotePrices: List<RemotePriceItem> = emptyList(),
   modifier: Modifier = Modifier,
 ) {
   var codeInput by rememberSaveable { mutableStateOf("") }
@@ -111,6 +114,14 @@ fun RedeemCodeScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
       ) {
+        if (remotePrices.isNotEmpty()) {
+          item {
+            RemotePricesCard(
+              prices = remotePrices,
+              cardTestTag = "redeem_prices_card",
+            )
+          }
+        }
         item {
           Card(
             shape = RoundedCornerShape(22.dp),

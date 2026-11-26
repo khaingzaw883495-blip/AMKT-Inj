@@ -67,7 +67,7 @@ import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34], qualifiers = "w412dp-h915dp")
+@Config(sdk = [36], qualifiers = "w412dp-h915dp")
 class SmartlinkAdGateTest {
 
   @get:Rule val composeRule = createComposeRule()
@@ -362,12 +362,10 @@ class SmartlinkAdGateTest {
     lazyList.performScrollToNode(hasTestTag("home_owner_banner_card"))
     composeRule.onNodeWithTag("home_owner_banner_card").performScrollTo().assertIsDisplayed()
 
-    // Bottom Smartlink_2 banner sits at the bottom and opens NEW Smartlink URL on tap
-    lazyList.performScrollToNode(hasTestTag("home_smartlink_bottom_banner"))
-    composeRule.onNodeWithTag("home_smartlink_bottom_banner").performScrollTo().assertIsDisplayed().performClick()
-    assertEquals(expectedNewSmartlink, openedUrl)
+    // Sponsored-link box ("Tap to support AMKT") must NOT be present anywhere on Home
+    composeRule.onAllNodesWithTag("home_smartlink_bottom_banner", useUnmergedTree = true).assertCountEquals(0)
 
-    // Adsterra 320x50 banner slot is also present alongside the Smartlink banner
+    // Adsterra 320x50 banner slot stays present on Home
     lazyList.performScrollToNode(hasTestTag("home_adsterra_320x50_banner"))
     composeRule.onNodeWithTag("home_adsterra_320x50_banner").performScrollTo().assertIsDisplayed()
   }
@@ -426,13 +424,12 @@ class SmartlinkAdGateTest {
     val splitRepo = NetworkServerRepository(db.networkConfigDao(), db.serverAccountDao(), remoteRepo)
     val legacyRepo = ServerProfileRepository(db.serverProfileDao(), remoteRepo)
 
-    val (netId, freeId, vipId) =
+    val (netId, freeId) =
       runBlocking {
         val nId = splitRepo.saveNetwork(sampleNetwork.copy(id = 0L), selectAfterSave = true)
         val fId = splitRepo.saveServer(freeRemoteServer.copy(id = 0L), selectAfterSave = true)
-        val vId = splitRepo.saveServer(redeemedServer.copy(id = 0L), selectAfterSave = false)
         splitRepo.selectCombination(nId, fId)
-        Triple(nId, fId, vId)
+        nId to fId
       }
 
     val viewModel =
@@ -519,8 +516,8 @@ class SmartlinkAdGateTest {
     composeRule.onNodeWithTag("home_extend_time_button").assertIsNotEnabled()
     composeRule.onNodeWithTag("home_extend_limit_message").assertIsDisplayed()
 
-    // 5. Select INJ-redeemed paid server -> hides Extend Time button AND skips connect gate completely
-    runBlocking { splitRepo.selectServer(vipId) }
+    // 5. Redeem/select INJ-redeemed paid server -> hides Extend Time button AND skips connect gate completely
+    val vipId = runBlocking { splitRepo.saveServer(redeemedServer.copy(id = 0L), selectAfterSave = true) }
     awaitUiCondition("VIP server selection should propagate") { viewModel.selectedServer.value?.id == vipId }
     composeRule.waitForIdle()
     composeRule.onAllNodesWithTag("home_extend_time_button", useUnmergedTree = true).assertCountEquals(0)

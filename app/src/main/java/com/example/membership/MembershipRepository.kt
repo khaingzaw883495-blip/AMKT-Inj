@@ -44,11 +44,15 @@ class MembershipRepository(
   private val dataStore: DataStore<Preferences> = context.membershipDataStore,
   private val todayYmdProvider: () -> Int = { ProfileExpiryChecker.currentLocalYmd() },
   private val nowMsProvider: () -> Long = { System.currentTimeMillis() },
+  private val usageWebhookUrl: String = USAGE_PING_ENDPOINT,
 ) {
   private val moshi: Moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
   private val validateReqAdapter = moshi.adapter(CodeValidateRequest::class.java)
   private val validateResAdapter = moshi.adapter(CodeValidateResponse::class.java)
   private val bannerAdapter = moshi.adapter(OwnerBannerPayloadDto::class.java)
+  private val priceListEnvelopeAdapter = moshi.adapter(RemotePriceListEnvelope::class.java)
+  private val usageReqAdapter = moshi.adapter(UsagePingRequest::class.java)
+  private val usageResAdapter = moshi.adapter(UsagePingResponse::class.java)
 
   @SuppressLint("HardwareIds")
   fun getDeviceId(): String {
@@ -90,6 +94,19 @@ class MembershipRepository(
       val today = todayYmdProvider()
       val storedDate = prefs[KEY_AD_GATE_DATE_YMD] ?: 0
       if (storedDate == today) (prefs[KEY_AD_GATE_DAILY_COUNT] ?: 0).coerceAtLeast(0) else 0
+    }
+
+  val remotePricesFlow: Flow<List<RemotePriceItem>> =
+    dataStore.data.map { prefs ->
+      val rawJson = prefs[KEY_REMOTE_PRICES_JSON].orEmpty()
+      if (rawJson.isBlank()) emptyList()
+      else runCatching { priceListEnvelopeAdapter.fromJson(rawJson)?.prices.orEmpty() }.getOrElse { emptyList() }
+    }
+
+  val totalAppUsersFlow: Flow<Int?> =
+    dataStore.data.map { prefs ->
+      val count = prefs[KEY_TOTAL_APP_USERS]
+      if (count != null && count >= 0) count else null
     }
 
   val freeTimeStatusFlow: Flow<FreeTimeStatus> =
@@ -321,6 +338,101 @@ class MembershipRepository(
     }
   }
 
+  /**
+   * Persists the dynamic pricing list from Remote JSON `"prices"`.
+   * Passing an empty list clears any stored prices so Home and Redeem show zero prices
+   * (never falls back to any hardcoded price).
+   */
+  suspend fun saveRemotePrices(prices: List<RemotePriceItem>) {
+    dataStore.edit { prefs ->
+      if (prices.isEmpty()) {
+        prefs.remove(KEY_REMOTE_PRICES_JSON)
+      } else {
+        prefs[KEY_REMOTE_PRICES_JSON] =
+          priceListEnvelopeAdapter.toJson(RemotePriceListEnvelope(prices = prices))
+      }
+    }
+  }
+
+  suspend fun saveTotalAppUsers(count: Int?) {
+    dataStore.edit { prefs ->
+      if (count != null && count >= 0) {
+        prefs[KEY_TOTAL_APP_USERS] = count
+      } else {
+        prefs.remove(KEY_TOTAL_APP_USERS)
+      }
+    }
+  }
+
+  /**
+   * Sends a lightweight, non-blocking usage ping to the owner's n8n + Supabase webhook so
+   * distinct devices are counted for total app users and per-server lifetime users.
+   * Never throws and never blocks connecting if offline or unreachable.
+   */
+  suspend fun reportUsagePing(
+    serverName: String,
+    event: String = "connect",
+  ): UsagePingResult? {
+    val targetUrl = usageWebhookUrl.trim()
+    if (!targetUrl.startsWith("https://", ignoreCase = true) &&
+      !targetUrl.startsWith("http://", ignoreCase = true)
+    ) {
+      return null
+    }
+    val deviceId = getDeviceId()
+    return withContext(Dispatchers.IO) {
+      try {
+        val jsonBody =
+          usageReqAdapter.toJson(
+            UsagePingRequest(
+              deviceId = deviceId,
+              serverName = serverName.trim(),
+              event = event,
+            )
+          )
+        val request =
+          Request.Builder()
+            .url(targetUrl)
+            .post(jsonBody.toRequestBody(JSON_MEDIA_TYPE))
+            .header("Accept", "application/json")
+            .build()
+
+        httpClient.newCall(request).execute().use { response ->
+          if (!response.isSuccessful) return@withContext null
+          val bodyText = response.body?.string().orEmpty()
+          val parsed =
+            if (bodyText.isNotBlank()) runCatching { usageResAdapter.fromJson(bodyText) }.getOrNull()
+            else null
+          val appTotal =
+            parsed?.let {
+              listOfNotNull(it.appUsers, it.totalAppUsers, it.totalUsers).firstOrNull { n -> n >= 0 }
+            }
+          val srvTotal =
+            parsed?.let {
+              listOfNotNull(it.serverUsers, it.lifetimeUsers, it.usedBy, it.distinctUsers)
+                .firstOrNull { n -> n >= 0 }
+            }
+          if (appTotal != null) {
+            saveTotalAppUsers(appTotal)
+          }
+          UsagePingResult(totalAppUsers = appTotal, serverLifetimeUsers = srvTotal)
+        }
+      } catch (_: Exception) {
+        null
+      }
+    }
+  }
+
+  suspend fun reportFirstLaunchUsageIfNeeded(): UsagePingResult? {
+    val alreadySent = runCatching { dataStore.data.first()[KEY_LAUNCH_PING_SENT] ?: false }.getOrDefault(false)
+    if (alreadySent) return null
+    val res = reportUsagePing(serverName = "", event = "app_open") ?: return null
+    runCatching {
+      dataStore.edit { prefs -> prefs[KEY_LAUNCH_PING_SENT] = true }
+    }
+    return res
+  }
+
   suspend fun fetchOwnerBannerFromUrl(rawUrl: String): Result<OwnerBanner?> {
     val cleanUrl = rawUrl.trim()
     if (cleanUrl.isBlank()) {
@@ -377,6 +489,7 @@ class MembershipRepository(
 
   companion object {
     const val VALIDATE_ENDPOINT = "https://n8n.marratethu.web.id/webhook/amkt-noads-validate"
+    const val USAGE_PING_ENDPOINT = "https://n8n.marratethu.web.id/webhook/amkt-injector-usage"
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
     private val KEY_PASS_ACTIVE = booleanPreferencesKey("pass_active")
@@ -394,6 +507,9 @@ class MembershipRepository(
     private val KEY_TIME_EXTEND_DAILY_COUNT = intPreferencesKey("time_extend_daily_count")
     private val KEY_FREE_TIME_INITIALIZED = booleanPreferencesKey("free_time_initialized")
     private val KEY_FREE_TIME_EXPIRES_AT_MS = longPreferencesKey("free_time_expires_at_ms")
+    private val KEY_REMOTE_PRICES_JSON = stringPreferencesKey("remote_prices_json")
+    private val KEY_TOTAL_APP_USERS = intPreferencesKey("total_app_users")
+    private val KEY_LAUNCH_PING_SENT = booleanPreferencesKey("launch_usage_ping_sent")
 
     fun defaultHttpClient(): OkHttpClient =
       OkHttpClient.Builder()

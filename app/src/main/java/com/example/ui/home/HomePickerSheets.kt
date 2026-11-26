@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -21,7 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ConfirmationNumber
-import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -31,8 +32,10 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -45,6 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -56,6 +60,7 @@ import com.example.data.NetworkConfigEntity
 import com.example.data.ServerAccountEntity
 import com.example.data.ServerPingChecker
 import com.example.ui.RemoteSyncFeedback
+import com.example.ui.ads.Adsterra320x50BannerSlot
 import com.example.ui.theme.DisplayFontFamily
 import com.example.ui.theme.MonoFontFamily
 
@@ -72,6 +77,10 @@ fun ServerPickerBottomSheet(
   remoteSyncFeedback: RemoteSyncFeedback? = null,
   onRefreshServers: () -> Unit = {},
   onDismissSyncFeedback: () -> Unit = {},
+  serverPingsMs: Map<Long, Int?> = emptyMap(),
+  onImportMyVpnClick: (() -> Unit)? = null,
+  showAdsterraBanners: Boolean = true,
+  onOpenBannerLink: (String) -> Unit = {},
 ) {
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   var query by remember { mutableStateOf("") }
@@ -260,20 +269,37 @@ fun ServerPickerBottomSheet(
         modifier = Modifier.fillMaxWidth().testTag("server_sheet_search"),
       )
 
-      // Quick actions bar (Redeem / List)
+      // Quick actions bar (Redeem / Import .myvpn / List)
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
       ) {
         FilledTonalButton(
           onClick = onOpenRedeem,
           shape = RoundedCornerShape(12.dp),
-          contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+          contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
           modifier = Modifier.weight(1f).testTag("server_sheet_redeem"),
         ) {
           Icon(Icons.Default.ConfirmationNumber, contentDescription = null, modifier = Modifier.size(16.dp))
           Spacer(Modifier.width(4.dp))
-          Text(stringResource(R.string.redeem_button_short), maxLines = 1)
+          Text(stringResource(R.string.redeem_button_short), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (onImportMyVpnClick != null) {
+          OutlinedButton(
+            onClick = onImportMyVpnClick,
+            shape = RoundedCornerShape(12.dp),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+            modifier = Modifier.testTag("server_sheet_import_myvpn"),
+          ) {
+            Icon(
+              imageVector = Icons.Default.FileOpen,
+              contentDescription = stringResource(R.string.cd_import_myvpn),
+              modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(stringResource(R.string.action_import_myvpn), maxLines = 1)
+          }
         }
         TextButton(
           onClick = onManageAll,
@@ -283,7 +309,7 @@ fun ServerPickerBottomSheet(
         }
       }
 
-      // Server list (NAME ONLY)
+      // Server list (NAME + ONLINE/LIMIT + USAGE BAR + LIVE PING)
       if (filtered.isEmpty()) {
         Box(
           modifier = Modifier.fillMaxWidth().padding(vertical = 28.dp),
@@ -297,7 +323,7 @@ fun ServerPickerBottomSheet(
         }
       } else {
         LazyColumn(
-          modifier = Modifier.fillMaxWidth().heightIn(max = 380.dp),
+          modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp),
           verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
           items(filtered, key = { it.id }) { srv ->
@@ -308,6 +334,8 @@ fun ServerPickerBottomSheet(
             val bgColor =
               if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.28f)
               else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            val pingMs = serverPingsMs[srv.id]
+            val usageFraction = remember(srv.onlineCount, srv.userLimit) { srv.onlineUsageFraction() }
 
             Surface(
               shape = RoundedCornerShape(16.dp),
@@ -323,7 +351,7 @@ fun ServerPickerBottomSheet(
               val (expiryLine, isExpired) =
                 remember(srv.expiryDate) { ServerPingChecker.formatRemainingExpiry(srv.expiryDate) }
               Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 14.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
               ) {
@@ -336,7 +364,7 @@ fun ServerPickerBottomSheet(
                     Text(text = flag, fontSize = 20.sp)
                   }
                 }
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                   Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -385,14 +413,53 @@ fun ServerPickerBottomSheet(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.testTag("server_sheet_online_limit_${srv.id}"),
                   )
+                  srv.formatLifetimeUsersLabel()?.let { usedByLabel ->
+                    Text(
+                      text = usedByLabel,
+                      style = MaterialTheme.typography.labelSmall,
+                      fontFamily = MonoFontFamily,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis,
+                      modifier = Modifier.testTag("server_sheet_lifetime_users_${srv.id}"),
+                    )
+                  }
+                  if (usageFraction != null) {
+                    val barColor =
+                      when {
+                        usageFraction >= 0.9f -> MaterialTheme.colorScheme.error
+                        usageFraction >= 0.7f -> MaterialTheme.colorScheme.secondary
+                        else -> MaterialTheme.colorScheme.primary
+                      }
+                    LinearProgressIndicator(
+                      progress = { usageFraction },
+                      color = barColor,
+                      trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+                      modifier =
+                        Modifier
+                          .fillMaxWidth()
+                          .height(5.dp)
+                          .clip(RoundedCornerShape(999.dp))
+                          .testTag("server_sheet_usage_bar_${srv.id}"),
+                    )
+                  }
                 }
-                if (isSelected) {
-                  Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = stringResource(R.string.badge_active),
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp),
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                  ServerPingPill(
+                    pingMs = pingMs,
+                    testTag = "server_sheet_ping_${srv.id}",
                   )
+                  if (isSelected) {
+                    Icon(
+                      imageVector = Icons.Default.Check,
+                      contentDescription = stringResource(R.string.badge_active),
+                      tint = MaterialTheme.colorScheme.primary,
+                      modifier = Modifier.size(18.dp),
+                    )
+                  }
                 }
               }
             }
@@ -413,7 +480,52 @@ fun ServerPickerBottomSheet(
           modifier = Modifier.align(Alignment.CenterHorizontally),
         )
       }
+
+      if (showAdsterraBanners) {
+        // Adsterra 320x50 banner pinned outside the scrolling server list (free users only)
+        Adsterra320x50BannerSlot(
+          onOpenExternalUrl = onOpenBannerLink,
+          bannerTag = "server_sheet_banner_adsterra",
+        )
+      }
     }
+  }
+}
+
+@Composable
+internal fun ServerPingPill(
+  pingMs: Int?,
+  testTag: String,
+  modifier: Modifier = Modifier,
+) {
+  val bgColor =
+    when {
+      pingMs == null || pingMs <= 0 -> MaterialTheme.colorScheme.surfaceVariant
+      pingMs < 150 -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+      pingMs < 400 -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.75f)
+      else -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.75f)
+    }
+  val textColor =
+    when {
+      pingMs == null || pingMs <= 0 -> MaterialTheme.colorScheme.onSurfaceVariant
+      pingMs < 150 -> MaterialTheme.colorScheme.onPrimaryContainer
+      pingMs < 400 -> MaterialTheme.colorScheme.onSecondaryContainer
+      else -> MaterialTheme.colorScheme.onErrorContainer
+    }
+  Surface(
+    shape = RoundedCornerShape(999.dp),
+    color = bgColor,
+    modifier = modifier,
+  ) {
+    Text(
+      text = ServerPingChecker.formatPingBadge(pingMs),
+      style = MaterialTheme.typography.labelSmall,
+      fontFamily = MonoFontFamily,
+      fontWeight = FontWeight.SemiBold,
+      color = textColor,
+      maxLines = 1,
+      modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp).testTag(testTag),
+    )
   }
 }
 
@@ -426,6 +538,8 @@ fun NetworkPickerBottomSheet(
   onManageAll: () -> Unit,
   onDismiss: () -> Unit,
   onClearNetwork: (() -> Unit)? = null,
+  showAdsterraBanners: Boolean = true,
+  onOpenBannerLink: (String) -> Unit = {},
 ) {
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   var query by remember { mutableStateOf("") }
@@ -553,7 +667,7 @@ fun NetworkPickerBottomSheet(
         }
       } else {
         LazyColumn(
-          modifier = Modifier.fillMaxWidth().heightIn(max = 380.dp),
+          modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp),
           verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
           items(filtered, key = { it.id }) { net ->
@@ -635,6 +749,14 @@ fun NetworkPickerBottomSheet(
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
           modifier = Modifier.align(Alignment.CenterHorizontally),
+        )
+      }
+
+      if (showAdsterraBanners) {
+        // Adsterra 320x50 banner pinned outside the scrolling network list (free users only)
+        Adsterra320x50BannerSlot(
+          onOpenExternalUrl = onOpenBannerLink,
+          bannerTag = "network_sheet_banner_adsterra",
         )
       }
     }

@@ -40,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.NetworkConfigEntity
+import com.example.ui.ads.Adsterra320x50BannerSlot
 
 /**
  * Locked-down Networks list: shows only Network name + privacy subtitle to select.
@@ -52,6 +53,8 @@ fun NetworksScreen(
   onSelectNetwork: (NetworkConfigEntity) -> Unit,
   onUpdateClick: () -> Unit = {},
   isUpdating: Boolean = false,
+  showAdsterraBanners: Boolean = true,
+  onOpenBannerLink: (String) -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
   Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
@@ -72,7 +75,7 @@ fun NetworksScreen(
 
       if (networks.isEmpty()) {
         Box(
-          modifier = Modifier.fillMaxSize().padding(32.dp),
+          modifier = Modifier.weight(1f).fillMaxWidth().padding(32.dp),
           contentAlignment = Alignment.Center,
         ) {
           Column(
@@ -122,8 +125,8 @@ fun NetworksScreen(
         }
       } else {
         LazyColumn(
-          modifier = Modifier.fillMaxSize(),
-          contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+          modifier = Modifier.weight(1f).fillMaxWidth(),
+          contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
           verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
           items(networks, key = { it.id }) { network ->
@@ -134,6 +137,14 @@ fun NetworksScreen(
             )
           }
         }
+      }
+
+      if (showAdsterraBanners) {
+        Adsterra320x50BannerSlot(
+          onOpenExternalUrl = onOpenBannerLink,
+          bannerTag = "networks_banner_adsterra",
+          modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
       }
     }
   }

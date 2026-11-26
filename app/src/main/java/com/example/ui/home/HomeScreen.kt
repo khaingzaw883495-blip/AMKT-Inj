@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,11 +26,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.ConfirmationNumber
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.MoreTime
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
@@ -58,13 +61,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -73,6 +82,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.example.BuildConfig
 import com.example.R
 import com.example.ads.FreeTimeStatus
@@ -82,12 +92,12 @@ import com.example.data.ServerPingChecker
 import com.example.membership.OwnerBanner
 import com.example.ui.RemoteSyncFeedback
 import com.example.ui.ads.Adsterra320x50BannerSlot
-import com.example.ui.ads.BottomSmartlinkBannerCard
 import com.example.ui.theme.DisplayFontFamily
 import com.example.ui.theme.MonoFontFamily
 import com.example.vpn.AmktVpnService
 import com.example.vpn.VpnTrafficStats
 import com.example.vpn.VpnTunnelState
+import java.util.Locale
 import kotlinx.coroutines.delay
 
 @Composable
@@ -118,8 +128,13 @@ fun HomeScreen(
   freeTimeStatus: FreeTimeStatus? = null,
   hasValidNoAdsPass: Boolean = false,
   hasActiveRedeemedServer: Boolean = false,
+  serverPingsMs: Map<Long, Int?> = emptyMap(),
+  onRefreshPings: () -> Unit = {},
+  onImportMyVpnClick: (() -> Unit)? = null,
   nowEpochMsProvider: () -> Long = { System.currentTimeMillis() },
   onExtendTimeClick: () -> Unit = {},
+  totalAppUsers: Int? = null,
+  activeRedeemedServer: ServerAccountEntity? = null,
   modifier: Modifier = Modifier,
 ) {
   var showNetworkSheet by remember { mutableStateOf(false) }
@@ -145,6 +160,8 @@ fun HomeScreen(
             showNetworkSheet = false
           }
         },
+      showAdsterraBanners = showAdsterraBanners,
+      onOpenBannerLink = onOpenBannerLink,
     )
   }
 
@@ -175,6 +192,16 @@ fun HomeScreen(
       remoteSyncFeedback = remoteSyncFeedback,
       onRefreshServers = onRefreshServersClick,
       onDismissSyncFeedback = onDismissRemoteSyncFeedback,
+      serverPingsMs = serverPingsMs,
+      onImportMyVpnClick =
+        onImportMyVpnClick?.let { importFn ->
+          {
+            showServerSheet = false
+            importFn()
+          }
+        },
+      showAdsterraBanners = showAdsterraBanners,
+      onOpenBannerLink = onOpenBannerLink,
     )
   }
 
@@ -232,35 +259,45 @@ fun HomeScreen(
         UnifiedConnectionCard(
           selectedNetwork = selectedNetwork,
           selectedServer = selectedServer,
+          selectedServerPingMs = selectedServer?.id?.let { serverPingsMs[it] },
           vpnState = vpnState,
           nowEpochMs = nowEpochMs,
           freeTimeStatus = freeTimeStatus,
           hasValidNoAdsPass = hasValidNoAdsPass,
           hasActiveRedeemedServer = hasActiveRedeemedServer,
+          activeRedeemedServer = activeRedeemedServer,
           onOpenNetworkPicker = { showNetworkSheet = true },
-          onOpenServerPicker = { showServerSheet = true },
+          onOpenServerPicker = {
+            onRefreshPings()
+            showServerSheet = true
+          },
           onExtendTimeClick = onExtendTimeClick,
           onConnectClick = onConnectClick,
         )
       }
 
-      // 4. Read-only Duration & Data Used pills directly beneath the main card
+      // 4. Read-only Duration, Data Used & App Users pills directly beneath the main card
       item {
         CompactStatsPillsRow(
           elapsedSeconds = elapsedSeconds,
           trafficStats = trafficStats,
+          totalAppUsers = totalAppUsers,
         )
       }
 
-      // 5. Single small "ကုတ်ထည့်ရန်" (Enter Code) button below the pills
+      // 5. Quick action buttons: "ကုတ်ထည့်ရန်" (Redeem) + "ဆက်သွယ်ရန်" (Contact Us -> https://t.me/amktvpn)
       item {
-        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
           OutlinedButton(
             onClick = onOpenRedeemClick,
             shape = RoundedCornerShape(999.dp),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f)),
-            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
-            modifier = Modifier.testTag("home_redeem_button"),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+            modifier = Modifier.defaultMinSize(minHeight = 48.dp).testTag("home_redeem_button"),
           ) {
             Icon(
               imageVector = Icons.Default.ConfirmationNumber,
@@ -268,12 +305,33 @@ fun HomeScreen(
               tint = MaterialTheme.colorScheme.secondary,
               modifier = Modifier.size(17.dp),
             )
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(7.dp))
             Text(
               text = stringResource(R.string.redeem_button_short),
               style = MaterialTheme.typography.labelLarge,
               fontWeight = FontWeight.SemiBold,
               color = MaterialTheme.colorScheme.secondary,
+            )
+          }
+
+          FilledTonalButton(
+            onClick = { onOpenBannerLink(OwnerBanner.DEFAULT_TELEGRAM_URL) },
+            shape = RoundedCornerShape(999.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+            modifier = Modifier.defaultMinSize(minHeight = 48.dp).testTag("home_contact_us_button"),
+          ) {
+            Icon(
+              imageVector = Icons.AutoMirrored.Filled.Send,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.onSecondaryContainer,
+              modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(7.dp))
+            Text(
+              text = stringResource(R.string.home_contact_us_cta),
+              style = MaterialTheme.typography.labelLarge,
+              fontWeight = FontWeight.SemiBold,
+              color = MaterialTheme.colorScheme.onSecondaryContainer,
             )
           }
         }
@@ -337,13 +395,8 @@ fun HomeScreen(
         }
       }
 
-      // 8. Bottom Adsterra Smartlink_2 banner + 320x50 banner (removed completely when paid/no-ads)
+      // 8. Bottom Adsterra 320x50 banner (removed completely when paid/no-ads)
       if (showAdsterraBanners) {
-        item {
-          BottomSmartlinkBannerCard(
-            onOpenSmartlink = { url -> onOpenBannerLink(url) },
-          )
-        }
         item {
           Adsterra320x50BannerSlot(
             onOpenExternalUrl = { url -> onOpenBannerLink(url) },
@@ -430,6 +483,17 @@ private fun AmktCenterEmblemRing(vpnState: VpnTunnelState) {
       is VpnTunnelState.Error -> MaterialTheme.colorScheme.error
       is VpnTunnelState.Disconnected -> MaterialTheme.colorScheme.outline
     }
+  val wavePrimaryColor =
+    when (vpnState) {
+      is VpnTunnelState.Connected -> MaterialTheme.colorScheme.primary
+      is VpnTunnelState.Connecting,
+      is VpnTunnelState.Reconnecting -> MaterialTheme.colorScheme.tertiary
+      is VpnTunnelState.KillSwitchBlocking,
+      is VpnTunnelState.Error -> MaterialTheme.colorScheme.error
+      is VpnTunnelState.Disconnected -> MaterialTheme.colorScheme.primary
+    }
+  val innerFillColor = wavePrimaryColor.copy(alpha = 0.12f)
+  val emblemCd = stringResource(R.string.cd_internet_waves_logo)
 
   Box(
     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -460,12 +524,46 @@ private fun AmktCenterEmblemRing(vpnState: VpnTunnelState) {
           style = Stroke(width = 2.dp.toPx()),
         )
       }
-      Image(
-        painter = painterResource(id = R.drawable.app_icon_amkt_1795171749485),
-        contentDescription = stringResource(R.string.app_name),
-        contentScale = ContentScale.Crop,
-        modifier = Modifier.size(92.dp).clip(CircleShape),
-      )
+      // Crisp internet signal waves graphic inside the emblem circle
+      Canvas(
+        modifier =
+          Modifier
+            .size(92.dp)
+            .clip(CircleShape)
+            .semantics { contentDescription = emblemCd }
+            .testTag("home_emblem_internet_waves"),
+      ) {
+        drawCircle(color = innerFillColor)
+        val cx = size.width / 2f
+        val originY = size.height * 0.72f
+        val radii = listOf(size.minDimension * 0.21f, size.minDimension * 0.36f, size.minDimension * 0.51f)
+        val alphas =
+          if (vpnState is VpnTunnelState.Connected) listOf(1f, 0.92f, 0.85f)
+          else listOf(0.95f, 0.8f, 0.65f)
+        val strokeWidth = 5.dp.toPx()
+
+        radii.forEachIndexed { idx, r ->
+          drawArc(
+            color = wavePrimaryColor.copy(alpha = alphas[idx]),
+            startAngle = -135f,
+            sweepAngle = 90f,
+            useCenter = false,
+            topLeft = Offset(cx - r, originY - r),
+            size = Size(r * 2f, r * 2f),
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+          )
+        }
+        drawCircle(
+          color = wavePrimaryColor.copy(alpha = 0.22f),
+          radius = 10.dp.toPx(),
+          center = Offset(cx, originY),
+        )
+        drawCircle(
+          color = wavePrimaryColor,
+          radius = 5.5.dp.toPx(),
+          center = Offset(cx, originY),
+        )
+      }
     }
   }
 }
@@ -474,11 +572,13 @@ private fun AmktCenterEmblemRing(vpnState: VpnTunnelState) {
 private fun UnifiedConnectionCard(
   selectedNetwork: NetworkConfigEntity?,
   selectedServer: ServerAccountEntity?,
+  selectedServerPingMs: Int?,
   vpnState: VpnTunnelState,
   nowEpochMs: Long,
   freeTimeStatus: FreeTimeStatus?,
   hasValidNoAdsPass: Boolean,
   hasActiveRedeemedServer: Boolean,
+  activeRedeemedServer: ServerAccountEntity? = null,
   onOpenNetworkPicker: () -> Unit,
   onOpenServerPicker: () -> Unit,
   onExtendTimeClick: () -> Unit,
@@ -515,14 +615,20 @@ private fun UnifiedConnectionCard(
     remember(selectedServer?.region, selectedServer?.name) {
       ServerPingChecker.resolveServerFlagEmoji(selectedServer)
     }
+  val rawExpiry = selectedServer?.expiryDate.orEmpty()
+  val hasSelectedExpiry = rawExpiry.isNotBlank()
   val (serverExpirySubtitle, isServerExpired) =
-    remember(selectedServer?.expiryDate) {
-      ServerPingChecker.formatRemainingExpiry(selectedServer?.expiryDate.orEmpty())
+    remember(rawExpiry) {
+      if (hasSelectedExpiry) {
+        ServerPingChecker.formatRemainingExpiry(rawExpiry)
+      } else {
+        "" to false
+      }
     }
   val (expiryCountdownHms, isExpiryCountdownExpired) =
-    remember(selectedServer?.expiryDate, nowEpochMs) {
+    remember(rawExpiry, nowEpochMs) {
       ServerPingChecker.formatExpiryCountdownHms(
-        expiryDate = selectedServer?.expiryDate.orEmpty(),
+        expiryDate = rawExpiry,
         nowMs = nowEpochMs,
       )
     }
@@ -538,10 +644,31 @@ private fun UnifiedConnectionCard(
       null
     }
 
-  val resolvedServerSubtitle = activeFreeTime?.formatSummaryLine(nowEpochMs) ?: serverExpirySubtitle
+  val resolvedServerSubtitle =
+    when {
+      activeFreeTime != null -> activeFreeTime.formatSummaryLine(nowEpochMs)
+      hasSelectedExpiry -> serverExpirySubtitle
+      else -> ""
+    }
   val isSubtitleError = activeFreeTime?.isExpired(nowEpochMs) ?: isServerExpired
-  val countdownHms = activeFreeTime?.formatRemainingHms(nowEpochMs) ?: expiryCountdownHms
+  val countdownHms =
+    when {
+      activeFreeTime != null -> activeFreeTime.formatRemainingHms(nowEpochMs)
+      hasSelectedExpiry -> expiryCountdownHms
+      isPaidOrActiveRedeemed -> "Unlimited"
+      else -> expiryCountdownHms
+    }
   val isCountdownExpired = activeFreeTime?.isExpired(nowEpochMs) ?: isExpiryCountdownExpired
+  val injVipExpiryBannerText =
+    remember(selectedServer?.id, activeRedeemedServer?.id, activeRedeemedServer?.expiryDate) {
+      val vip = activeRedeemedServer
+      if (vip != null && vip.expiryDate.isNotBlank() && selectedServer?.id != vip.id) {
+        val (formatted, _) = ServerPingChecker.formatRemainingExpiry(vip.expiryDate)
+        "INJ (${vip.name}): $formatted"
+      } else {
+        null
+      }
+    }
 
   Card(
     shape = RoundedCornerShape(24.dp),
@@ -650,6 +777,7 @@ private fun UnifiedConnectionCard(
             }
           }
           Row(
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
           ) {
@@ -676,8 +804,15 @@ private fun UnifiedConnectionCard(
                 )
               }
             }
+            if (selectedServer != null) {
+              Spacer(Modifier.weight(1f, fill = true))
+              ServerPingPill(
+                pingMs = selectedServerPingMs,
+                testTag = "home_server_ping_badge",
+              )
+            }
           }
-          if (selectedServer != null) {
+          if (selectedServer != null && resolvedServerSubtitle.isNotBlank()) {
             Text(
               text = resolvedServerSubtitle,
               style = MaterialTheme.typography.bodySmall,
@@ -687,6 +822,27 @@ private fun UnifiedConnectionCard(
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
               modifier = Modifier.testTag("home_server_expiry_line"),
+            )
+          }
+          selectedServer?.formatLifetimeUsersLabel()?.let { usedByLabel ->
+            Text(
+              text = usedByLabel,
+              style = MaterialTheme.typography.labelSmall,
+              fontFamily = MonoFontFamily,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+              modifier = Modifier.testTag("home_server_lifetime_users_line"),
+            )
+          }
+          if (injVipExpiryBannerText != null) {
+            Text(
+              text = injVipExpiryBannerText,
+              style = MaterialTheme.typography.labelSmall,
+              color = MaterialTheme.colorScheme.primary,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+              modifier = Modifier.testTag("home_inj_vip_expiry_line"),
             )
           }
         }
@@ -889,62 +1045,97 @@ private fun UnifiedConnectionCard(
 private fun CompactStatsPillsRow(
   elapsedSeconds: Long,
   trafficStats: VpnTrafficStats,
+  totalAppUsers: Int? = null,
 ) {
-  Row(
+  Column(
     modifier = Modifier.fillMaxWidth(),
-    horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-    verticalAlignment = Alignment.CenterVertically,
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.spacedBy(8.dp),
   ) {
-    Surface(
-      shape = RoundedCornerShape(999.dp),
-      color = MaterialTheme.colorScheme.surface,
-      border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-      modifier = Modifier.testTag("home_duration_pill"),
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+      verticalAlignment = Alignment.CenterVertically,
     ) {
-      Row(
-        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+      Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.testTag("home_duration_pill"),
       ) {
-        Icon(
-          imageVector = Icons.Default.Schedule,
-          contentDescription = null,
-          tint = MaterialTheme.colorScheme.onSurfaceVariant,
-          modifier = Modifier.size(15.dp),
-        )
-        Text(
-          text = "${stringResource(R.string.home_duration_prefix)} ${formatHms(elapsedSeconds)}",
-          style = MaterialTheme.typography.labelSmall,
-          fontFamily = MonoFontFamily,
-          color = MaterialTheme.colorScheme.onSurface,
-        )
+        Row(
+          modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+          Icon(
+            imageVector = Icons.Default.Schedule,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(15.dp),
+          )
+          Text(
+            text = "${stringResource(R.string.home_duration_prefix)} ${formatHms(elapsedSeconds)}",
+            style = MaterialTheme.typography.labelSmall,
+            fontFamily = MonoFontFamily,
+            color = MaterialTheme.colorScheme.onSurface,
+          )
+        }
+      }
+
+      Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.testTag("home_data_usage_pill"),
+      ) {
+        Row(
+          modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+          Icon(
+            imageVector = Icons.Default.SwapVert,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(15.dp),
+          )
+          Text(
+            text =
+              "↓ ${AmktVpnService.formatBytes(trafficStats.bytesDown)} · ↑ ${AmktVpnService.formatBytes(trafficStats.bytesUp)}",
+            style = MaterialTheme.typography.labelSmall,
+            fontFamily = MonoFontFamily,
+            color = MaterialTheme.colorScheme.onSurface,
+          )
+        }
       }
     }
 
-    Surface(
-      shape = RoundedCornerShape(999.dp),
-      color = MaterialTheme.colorScheme.surface,
-      border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-      modifier = Modifier.testTag("home_data_usage_pill"),
-    ) {
-      Row(
-        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    if (totalAppUsers != null && totalAppUsers >= 0) {
+      Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.testTag("home_app_users_pill"),
       ) {
-        Icon(
-          imageVector = Icons.Default.SwapVert,
-          contentDescription = null,
-          tint = MaterialTheme.colorScheme.onSurfaceVariant,
-          modifier = Modifier.size(15.dp),
-        )
-        Text(
-          text =
-            "↓ ${AmktVpnService.formatBytes(trafficStats.bytesDown)} · ↑ ${AmktVpnService.formatBytes(trafficStats.bytesUp)}",
-          style = MaterialTheme.typography.labelSmall,
-          fontFamily = MonoFontFamily,
-          color = MaterialTheme.colorScheme.onSurface,
-        )
+        Row(
+          modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+          Icon(
+            imageVector = Icons.Default.People,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(14.dp),
+          )
+          Text(
+            text = "App users: ${"%,d".format(Locale.US, totalAppUsers)}",
+            style = MaterialTheme.typography.labelSmall,
+            fontFamily = MonoFontFamily,
+            color = MaterialTheme.colorScheme.onSurface,
+          )
+        }
       }
     }
   }
@@ -1013,37 +1204,43 @@ private fun OwnerBannerCard(
       ?: fallbackSubtitle
 
   Card(
-    shape = RoundedCornerShape(18.dp),
+    shape = RoundedCornerShape(14.dp),
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
     modifier =
       Modifier
         .fillMaxWidth()
+        .heightIn(max = 76.dp)
         .clickable(onClick = onOpenLink)
         .testTag("home_owner_banner_card"),
   ) {
     Column {
       if (showRemoteImage) {
+        val ctx = LocalContext.current
+        val request =
+          remember(remoteImageUrl, ctx) {
+            ImageRequest.Builder(ctx).data(remoteImageUrl).crossfade(true).build()
+          }
         AsyncImage(
-          model = remoteImageUrl,
+          model = request,
           contentDescription = stringResource(R.string.cd_owner_banner),
           contentScale = ContentScale.Crop,
           onError = { remoteImageFailed = true },
           modifier =
             Modifier
               .fillMaxWidth()
-              .height(104.dp)
+              .height(54.dp)
               .testTag("home_owner_banner_remote_image"),
         )
-        if (!banner?.title.isNullOrBlank() || !banner?.linkUrl.isNullOrBlank()) {
+        if (!banner?.title.isNullOrBlank()) {
           Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
           ) {
             Text(
-              text = banner.title.ifBlank { banner.effectiveLinkUrl() },
-              style = MaterialTheme.typography.bodySmall,
+              text = banner.title,
+              style = MaterialTheme.typography.labelSmall,
               fontWeight = FontWeight.Medium,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
@@ -1053,31 +1250,31 @@ private fun OwnerBannerCard(
               imageVector = Icons.AutoMirrored.Filled.OpenInNew,
               contentDescription = null,
               tint = MaterialTheme.colorScheme.primary,
-              modifier = Modifier.size(16.dp),
+              modifier = Modifier.size(13.dp),
             )
           }
         }
       } else {
-        // Built-in fallback card (never displays a broken image) linking to AMKT Telegram or remote link
+        // Compact built-in fallback strip linking to AMKT Telegram or configured remote link
         Row(
           modifier =
             Modifier
               .fillMaxWidth()
-              .padding(horizontal = 14.dp, vertical = 12.dp)
+              .padding(horizontal = 12.dp, vertical = 6.dp)
               .testTag("home_owner_banner_fallback"),
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(12.dp),
+          horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
           Image(
             painter = painterResource(id = R.drawable.app_icon_amkt_1795171749485),
             contentDescription = stringResource(R.string.cd_owner_banner),
             contentScale = ContentScale.Crop,
-            modifier = Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)),
+            modifier = Modifier.size(30.dp).clip(RoundedCornerShape(8.dp)),
           )
-          Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+          Column(modifier = Modifier.weight(1f)) {
             Text(
               text = resolvedTitle,
-              style = MaterialTheme.typography.titleSmall,
+              style = MaterialTheme.typography.labelMedium,
               fontWeight = FontWeight.Bold,
               color = MaterialTheme.colorScheme.onSurface,
               maxLines = 1,
@@ -1085,7 +1282,7 @@ private fun OwnerBannerCard(
             )
             Text(
               text = resolvedSubtitle,
-              style = MaterialTheme.typography.bodySmall,
+              style = MaterialTheme.typography.labelSmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
@@ -1095,7 +1292,7 @@ private fun OwnerBannerCard(
             imageVector = Icons.AutoMirrored.Filled.OpenInNew,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(16.dp),
           )
         }
       }

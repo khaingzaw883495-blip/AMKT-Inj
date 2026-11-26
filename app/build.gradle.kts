@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.amktinjector.vkwmrx"
     minSdk = 24
     targetSdk = 36
-    versionCode = 23
-    versionName = "1.0.0-m17"
+    versionCode = 26
+    versionName = "1.0.0-m20"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

@@ -34,6 +34,7 @@ data class ServerAccountEntity(
   val isFromRemote: Boolean = false,
   val onlineCount: Int? = null,
   val userLimit: Int = DEFAULT_USER_LIMIT,
+  val lifetimeUsers: Int? = null,
   val createdAt: Long = System.currentTimeMillis(),
   val updatedAt: Long = System.currentTimeMillis(),
 ) {
@@ -100,17 +101,38 @@ data class ServerAccountEntity(
     get() = if (userLimit > 0) userLimit else DEFAULT_USER_LIMIT
 
   /**
-   * Formats NAMO-style online/limit indicator.
-   * When [onlineCount] is provided (>= 0), shows `"Online: X | Limit: Y"`.
-   * When [onlineCount] is absent/null, shows `"Limit: Y"` only — never fabricates an online count.
+   * Formats GOOD VPN-style online/limit indicator.
+   * When [onlineCount] is provided (>= 0), shows `"Online X · Limit Y"`.
+   * When [onlineCount] is absent/null, shows `"Limit Y"` only — never fabricates an online count.
    */
   fun formatOnlineLimitLabel(): String {
     val count = onlineCount
     return if (count != null && count >= 0) {
-      "Online: $count | Limit: $effectiveUserLimit"
+      "Online $count · Limit $effectiveUserLimit"
     } else {
-      "Limit: $effectiveUserLimit"
+      "Limit $effectiveUserLimit"
     }
+  }
+
+  /**
+   * Formats lifetime distinct user count (`"Used by: 128 users"`), or `null` when unknown.
+   * Never invents or guesses a count.
+   */
+  fun formatLifetimeUsersLabel(): String? {
+    val count = lifetimeUsers ?: return null
+    if (count < 0) return null
+    val formatted = "%,d".format(java.util.Locale.US, count)
+    return "Used by: $formatted users"
+  }
+
+  /**
+   * Returns normalized usage ratio (`0f..1f`) when [onlineCount] is known and `effectiveUserLimit > 0`,
+   * or `null` when [onlineCount] is absent — never fabricates a percentage.
+   */
+  fun onlineUsageFraction(): Float? {
+    val count = onlineCount ?: return null
+    if (count < 0 || effectiveUserLimit <= 0) return null
+    return (count.toFloat() / effectiveUserLimit.toFloat()).coerceIn(0f, 1f)
   }
 
   companion object {

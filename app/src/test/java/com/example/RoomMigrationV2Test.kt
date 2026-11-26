@@ -17,7 +17,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [36])
 class RoomMigrationV2Test {
 
   @Test
@@ -78,6 +78,7 @@ class RoomMigrationV2Test {
           AmktDatabase.MIGRATION_3_4,
           AmktDatabase.MIGRATION_4_5,
           AmktDatabase.MIGRATION_5_6,
+          AmktDatabase.MIGRATION_6_7,
         )
         .allowMainThreadQueries()
         .build()
@@ -186,6 +187,7 @@ class RoomMigrationV2Test {
           AmktDatabase.MIGRATION_3_4,
           AmktDatabase.MIGRATION_4_5,
           AmktDatabase.MIGRATION_5_6,
+          AmktDatabase.MIGRATION_6_7,
         )
         .allowMainThreadQueries()
         .build()

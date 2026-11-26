@@ -218,7 +218,7 @@
     <string name="pass_change_action">Code ပြောင်း/စစ်ရန်</string>
     <string name="pass_clear_action">Code ဖျက်ရန်</string>
     <string name="pass_dialog_title">Access Code အတည်ပြုရန်</string>
-    <string name="pass_dialog_desc">ပိုင်ရှင်၏ Telegram Bot မှရရှိသော တစ်ဖုန်းလျှင် တစ်ကုဒ် (2,500 Ks/month) ကို ထည့်သွင်း၍ ဆာဗာတွင် စစ်ဆေးပါ။</string>
+    <string name="pass_dialog_desc">ပိုင်ရှင်၏ Telegram Bot မှရရှိသော တစ်ဖုန်းလျှင် တစ်ကုဒ်ကို ထည့်သွင်း၍ ဆာဗာတွင် စစ်ဆေးပါ။</string>
     <string name="pass_code_label">Access Code</string>
     <string name="pass_device_id_label">ဖုန်း Device ID</string>
     <string name="pass_verify_button">အတည်ပြုစစ်ဆေးမည်</string>
@@ -284,16 +284,10 @@
     <string name="settings_redeem_desc">ဝယ်ယူထားသော ကုတ်ဖြင့် ဆာဗာရယူရန်</string>
     <string name="cd_settings">ဆက်တင်</string>
 
-    <!-- OpenVPN Transport -->
+    <!-- OpenVPN Transport & .myvpn Import -->
     <string name="badge_openvpn">OpenVPN</string>
-    <string name="action_import_ovpn">Import .ovpn</string>
-    <string name="cd_import_ovpn">.ovpn ဖိုင် ထည့်သွင်းရန်</string>
-    <string name="cd_delete_imported_server">ထည့်သွင်းထားသော OpenVPN ဆာဗာ ဖျက်ရန်</string>
-    <string name="ovpn_auth_dialog_title">OpenVPN အကောင့် ထည့်သွင်းရန်</string>
-    <string name="ovpn_auth_dialog_desc">ဤ .ovpn Config သည် Username နှင့် Password လိုအပ်ပါသည်။ တစ်ကြိမ်သာ ထည့်သွင်းပြီး လုံခြုံစွာ Encrypt လုပ်၍ သိမ်းဆည်းပေးပါမည်။</string>
-    <string name="ovpn_auth_username_label">Username</string>
-    <string name="ovpn_auth_password_label">Password</string>
-    <string name="ovpn_auth_save_button">သိမ်းဆည်းပြီး ထည့်သွင်းမည်</string>
+    <string name="action_import_myvpn">Import .myvpn</string>
+    <string name="cd_import_myvpn">.myvpn ဖိုင် ထည့်သွင်းရန်</string>
     <string name="action_no_network_direct">ကွန်ရက်မရွေးဘဲ တိုက်ရိုက်ချိတ်ဆက်မည် (No Network)</string>
 
     <!-- Owner Announcement Banner Fallback -->
@@ -313,11 +307,12 @@
     <string name="home_extend_grants_left_format">%1$d left today</string>
     <string name="home_extend_limit_used_message">ယနေ့ 2/2 ကြိမ် ပြည့်ပါပြီ — မနက်ဖြန် ထပ်တိုးနိုင်ပါသည်</string>
     <string name="update_finished">Update Finished</string>
-    <string name="smartlink_banner_title">AMKT ကို ပံ့ပိုးရန် နှိပ်ပါ</string>
-    <string name="smartlink_banner_subtitle">Sponsored link ကို Browser တွင် ဖွင့်ကြည့်ရန်</string>
-    <string name="cd_smartlink_banner">Sponsored Banner</string>
+    <string name="home_contact_us_cta">ဆက်သွယ်ရန်</string>
+    <string name="home_contact_us_subtitle">AMKT VPN Telegram Channel</string>
+    <string name="prices_card_title">ဝယ်ယူနိုင်သော အစီအစဉ်များ</string>
 
     <!-- Content Descriptions -->
     <string name="cd_back">နောက်သို့</string>
     <string name="cd_close">ပိတ်ရန်</string>
+    <string name="cd_internet_waves_logo">AMKT Injector Internet Waves</string>
 </resources>
