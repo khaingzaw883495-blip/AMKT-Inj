@@ -5,6 +5,7 @@ import com.example.data.LogLevel
 import com.example.data.ServerProfileEntity
 import com.example.ssh.LocalSocks5Proxy
 import com.example.ssh.SshTrafficStats
+import com.example.ssh.TunnelConnector
 import java.io.IOException
 import java.net.ConnectException
 import java.net.Socket
@@ -156,34 +157,52 @@ class NativeVlessTunnelEngine(
           level = LogLevel.SUCCESS,
         )
 
-        // 2. Start local SOCKS5 proxy (127.0.0.1:1080) forwarding every TCP stream through VLESS/WS
+        // 2. Start local SOCKS5 proxy (127.0.0.1:1080) forwarding TCP and UDP streams through VLESS/WS
+        val vlessTcpConnector = TunnelConnector { dstHost, dstPort, _ ->
+          if (userCancelled) {
+            throw IOException("VLESS tunnel stopped")
+          }
+          try {
+            val channel =
+              transport.openVlessChannel(
+                config = config,
+                targetHost = dstHost,
+                targetPort = dstPort,
+                isAborted = { userCancelled },
+                onSocketOpened = { sock -> trackedSockets.add(sock) },
+              )
+            consecutiveFailures.set(0)
+            channel
+          } catch (e: IOException) {
+            val fails = consecutiveFailures.incrementAndGet()
+            if (!userCancelled && fails >= MAX_CONSECUTIVE_STREAM_FAILURES) {
+              scope.launch { handleUpstreamDrop(config, e.message ?: "network error") }
+            }
+            throw e
+          }
+        }
         proxy =
           LocalSocks5Proxy(
-            connector = { dstHost, dstPort, _ ->
-              if (userCancelled) {
-                throw IOException("VLESS tunnel stopped")
-              }
-              try {
-                val channel =
-                  transport.openVlessChannel(
-                    config = config,
-                    targetHost = dstHost,
-                    targetPort = dstPort,
-                    isAborted = { userCancelled },
-                    onSocketOpened = { sock -> trackedSockets.add(sock) },
-                  )
-                consecutiveFailures.set(0)
-                channel
-              } catch (e: IOException) {
-                val fails = consecutiveFailures.incrementAndGet()
-                if (!userCancelled && fails >= MAX_CONSECUTIVE_STREAM_FAILURES) {
-                  scope.launch { handleUpstreamDrop(config, e.message ?: "network error") }
-                }
-                throw e
-              }
-            },
+            connector = vlessTcpConnector,
             onLog = { line ->
               logStore.append(tag = "VLESS", message = line, level = LogLevel.WARNING)
+            },
+            udpConnector = {
+              VlessUdpTunnelSession(
+                tcpConnector = vlessTcpConnector,
+                udpStreamOpener = { dstHost, dstPort ->
+                  if (userCancelled) throw IOException("VLESS tunnel stopped")
+                  val channel =
+                    transport.openVlessUdpChannel(
+                      config = config,
+                      targetHost = dstHost,
+                      targetPort = dstPort,
+                      isAborted = { userCancelled },
+                      onSocketOpened = { sock -> trackedSockets.add(sock) },
+                    )
+                  VlessUdpTunnelSession.wrapVlessChannel(channel)
+                },
+              )
             },
           )
 

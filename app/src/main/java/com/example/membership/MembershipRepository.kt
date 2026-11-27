@@ -22,6 +22,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -53,6 +55,7 @@ class MembershipRepository(
   private val priceListEnvelopeAdapter = moshi.adapter(RemotePriceListEnvelope::class.java)
   private val usageReqAdapter = moshi.adapter(UsagePingRequest::class.java)
   private val usageResAdapter = moshi.adapter(UsagePingResponse::class.java)
+  private val firstLaunchPingMutex = Mutex()
 
   @SuppressLint("HardwareIds")
   fun getDeviceId(): String {
@@ -423,15 +426,17 @@ class MembershipRepository(
     }
   }
 
-  suspend fun reportFirstLaunchUsageIfNeeded(): UsagePingResult? {
-    val alreadySent = runCatching { dataStore.data.first()[KEY_LAUNCH_PING_SENT] ?: false }.getOrDefault(false)
-    if (alreadySent) return null
-    val res = reportUsagePing(serverName = "", event = "app_open") ?: return null
-    runCatching {
-      dataStore.edit { prefs -> prefs[KEY_LAUNCH_PING_SENT] = true }
+  suspend fun reportFirstLaunchUsageIfNeeded(): UsagePingResult? =
+    firstLaunchPingMutex.withLock {
+      val alreadySent =
+        runCatching { dataStore.data.first()[KEY_LAUNCH_PING_SENT] ?: false }.getOrDefault(false)
+      if (alreadySent) return@withLock null
+      val res = reportUsagePing(serverName = "", event = "app_open") ?: return@withLock null
+      runCatching {
+        dataStore.edit { prefs -> prefs[KEY_LAUNCH_PING_SENT] = true }
+      }
+      res
     }
-    return res
-  }
 
   suspend fun fetchOwnerBannerFromUrl(rawUrl: String): Result<OwnerBanner?> {
     val cleanUrl = rawUrl.trim()

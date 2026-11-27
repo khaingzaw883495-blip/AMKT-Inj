@@ -185,7 +185,7 @@ class LockdownAndHiddenUrlTest {
     composeRule.onNodeWithText("Server").assertIsDisplayed()
     composeRule.onNodeWithText("🇯🇵").assertIsDisplayed()
     composeRule.onNodeWithText("Japan").assertIsDisplayed()
-    composeRule.onNodeWithTag("home_server_expiry_line", useUnmergedTree = true).assertIsDisplayed()
+    composeRule.onNodeWithTag("home_server_expiry_line", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
 
     // Remaining time row: read-only HH:MM:SS countdown, NO AddTime button
     val lazyList = composeRule.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex))

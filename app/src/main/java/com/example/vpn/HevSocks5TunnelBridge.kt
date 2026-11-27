@@ -77,7 +77,7 @@ object HevSocks5ConfigBuilder {
       socks5:
         port: $safePort
         address: $socksHost
-        udp: 'tcp'
+        udp: 'udp'
 
       mapdns:
         address: $TUN_DNS_IPV4

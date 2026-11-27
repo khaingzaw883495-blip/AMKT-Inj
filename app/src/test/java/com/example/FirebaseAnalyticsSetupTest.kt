@@ -61,8 +61,8 @@ class FirebaseAnalyticsSetupTest {
   @Test
   fun googleServicesConfigAndVersionMatchAmktVpnProject() {
     assertEquals("com.aistudio.amktinjector.vkwmrx", BuildConfig.APPLICATION_ID)
-    assertEquals(26, BuildConfig.VERSION_CODE)
-    assertEquals("1.0.0-m20", BuildConfig.VERSION_NAME)
+    assertEquals(27, BuildConfig.VERSION_CODE)
+    assertEquals("1.0.0-m21", BuildConfig.VERSION_NAME)
 
     val appIdResId = context.resources.getIdentifier("google_app_id", "string", context.packageName)
     assertTrue("google_app_id from google-services.json must be merged", appIdResId != 0)

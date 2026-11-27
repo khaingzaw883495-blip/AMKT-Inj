@@ -133,6 +133,7 @@ class WebSocketTransport(
     config: VlessConfig,
     targetHost: String,
     targetPort: Int,
+    command: Byte = VlessProtocol.COMMAND_TCP,
     isAborted: () -> Boolean = { false },
     onSocketOpened: (Socket) -> Unit = {},
   ): TunnelChannel {
@@ -143,7 +144,7 @@ class WebSocketTransport(
           uuidBytes = config.uuidBytes,
           targetHost = targetHost,
           targetPort = targetPort,
-          command = VlessProtocol.COMMAND_TCP,
+          command = command,
         )
       ws.writeBinaryFrame(vlessHeader, 0, vlessHeader.size)
       VlessWebSocketChannel(ws)
@@ -152,6 +153,27 @@ class WebSocketTransport(
       if (e is IOException) throw e
       throw IOException("VLESS Header ပေးပို့မှု မအောင်မြင်ပါ: ${e.message ?: "unknown"}", e)
     }
+  }
+
+  /**
+   * Opens a live VLESS v0 UDP stream (`COMMAND_UDP = 0x02`) over WebSocket to [targetHost]:[targetPort].
+   */
+  @Throws(IOException::class)
+  fun openVlessUdpChannel(
+    config: VlessConfig,
+    targetHost: String,
+    targetPort: Int,
+    isAborted: () -> Boolean = { false },
+    onSocketOpened: (Socket) -> Unit = {},
+  ): TunnelChannel {
+    return openVlessChannel(
+      config = config,
+      targetHost = targetHost,
+      targetPort = targetPort,
+      command = VlessProtocol.COMMAND_UDP,
+      isAborted = isAborted,
+      onSocketOpened = onSocketOpened,
+    )
   }
 
   @Throws(IOException::class)

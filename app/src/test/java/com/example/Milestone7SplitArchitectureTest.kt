@@ -144,6 +144,7 @@ class Milestone7SplitArchitectureTest {
           AmktDatabase.MIGRATION_3_4,
           AmktDatabase.MIGRATION_4_5,
           AmktDatabase.MIGRATION_5_6,
+          AmktDatabase.MIGRATION_6_7,
         )
         .allowMainThreadQueries()
         .build()

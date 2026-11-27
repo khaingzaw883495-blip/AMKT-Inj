@@ -227,13 +227,22 @@ class JschSshTunnelEngine(
           level = LogLevel.SUCCESS,
         )
 
+        val sshConnector = TunnelConnector { dstHost, dstPort, clientPort ->
+          openSshDirectTcpChannel(connectedSession, dstHost, dstPort, clientPort, channelTimeoutMs)
+        }
         proxy =
           LocalSocks5Proxy(
-            connector = { dstHost, dstPort, clientPort ->
-              openSshDirectTcpChannel(connectedSession, dstHost, dstPort, clientPort, channelTimeoutMs)
-            },
+            connector = sshConnector,
             onLog = { line ->
               logStore.append(tag = "SOCKS5", message = line, level = LogLevel.WARNING)
+            },
+            udpConnector = {
+              SshUdpTunnelSession(
+                connector = sshConnector,
+                onLog = { line ->
+                  logStore.append(tag = "UDP", message = line, level = LogLevel.INFO)
+                },
+              )
             },
           )
         val boundPort = proxy.start(localSocksPort)

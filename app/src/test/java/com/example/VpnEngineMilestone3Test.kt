@@ -18,7 +18,7 @@ class VpnEngineMilestone3Test {
 
     assertTrue(yaml.contains("address: 127.0.0.1"))
     assertTrue(yaml.contains("port: 1080"))
-    assertTrue(yaml.contains("udp: 'tcp'"))
+    assertTrue(yaml.contains("udp: 'udp'"))
     assertTrue(yaml.contains("ipv4: 198.18.0.1"))
     assertTrue(yaml.contains("ipv6: 'fc00::1'"))
     assertTrue(yaml.contains("mapdns:"))

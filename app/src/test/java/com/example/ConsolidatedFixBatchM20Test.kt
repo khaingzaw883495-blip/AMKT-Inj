@@ -22,6 +22,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.config.ConfigFileCodec
@@ -305,7 +307,7 @@ class ConsolidatedFixBatchM20Test {
         `defaultNetworkId` INTEGER, `wasSelectedOnMigration` INTEGER NOT NULL,
         `ovpnConfigEncrypted` TEXT NOT NULL, `ovpnAuthRequired` INTEGER NOT NULL,
         `isFromRemote` INTEGER NOT NULL DEFAULT 0, `isUserImported` INTEGER NOT NULL,
-        `onlineCount` INTEGER, `userLimit` INTEGER,
+        `onlineCount` INTEGER, `userLimit` INTEGER NOT NULL DEFAULT 100,
         `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL
       )
       """.trimIndent()
@@ -439,48 +441,56 @@ class ConsolidatedFixBatchM20Test {
       val sId = splitRepo.saveServer(srv, selectAfterSave = true)
       splitRepo.selectCombination(nId, sId)
 
+      val viewModelStore = ViewModelStore()
       val viewModel =
-        AmktViewModel(
-          repository = legacyRepo,
-          membershipRepository = memberRepo,
-          vpnPreferencesRepository = VpnPreferencesRepository(context),
-          vpnController = vpnController,
-          configCodec = ConfigFileCodec(),
-          logStore = AppLogStore(),
-          networkServerRepository = splitRepo,
-        )
+        ViewModelProvider(
+          viewModelStore,
+          AmktViewModel.Factory(
+            repository = legacyRepo,
+            membershipRepository = memberRepo,
+            vpnPreferencesRepository = VpnPreferencesRepository(context),
+            vpnController = vpnController,
+            configCodec = ConfigFileCodec(),
+            logStore = AppLogStore(),
+            networkServerRepository = splitRepo,
+          ),
+        )[AmktViewModel::class.java]
 
-      val deadlineLaunch = System.currentTimeMillis() + 3_000L
-      while (receivedBodies.isEmpty() && System.currentTimeMillis() < deadlineLaunch) {
-        Thread.sleep(25L)
+      try {
+        val deadlineLaunch = System.currentTimeMillis() + 3_000L
+        while (receivedBodies.isEmpty() && System.currentTimeMillis() < deadlineLaunch) {
+          Thread.sleep(25L)
+        }
+        assertTrue("First-launch ping should be sent", receivedBodies.isNotEmpty())
+        assertTrue(receivedBodies.first().contains("\"event\":\"app_open\""))
+        assertTrue(receivedBodies.first().contains("\"device_id\":"))
+
+        assertNull(memberRepo.reportFirstLaunchUsageIfNeeded())
+
+        val storedNet = splitRepo.getNetworkById(nId)!!
+        val storedSrv = splitRepo.getServerById(sId)!!
+        val combined = EffectiveConnectionCombiner.combine(storedNet, storedSrv)
+        viewModel.startCombinedVpnAfterConsent(storedNet, storedSrv, combined)
+
+        assertEquals("VPN connect must proceed immediately without waiting on webhook", 1, vpnController.startCount)
+
+        val deadlineConnect = System.currentTimeMillis() + 3_000L
+        while (receivedBodies.size < 2 && System.currentTimeMillis() < deadlineConnect) {
+          Thread.sleep(25L)
+        }
+        assertTrue(receivedBodies.any { it.contains("\"event\":\"connect\"") && it.contains("\"server_name\":\"Tokyo 01\"") })
+
+        val deadlineDb = System.currentTimeMillis() + 3_000L
+        while ((splitRepo.getServerById(sId)?.lifetimeUsers == null || memberRepo.totalAppUsersFlow.first() != 6012) &&
+          System.currentTimeMillis() < deadlineDb
+        ) {
+          Thread.sleep(25L)
+        }
+        assertEquals(6012, memberRepo.totalAppUsersFlow.first())
+        assertEquals(891, splitRepo.getServerById(sId)?.lifetimeUsers)
+      } finally {
+        viewModelStore.clear()
       }
-      assertTrue("First-launch ping should be sent", receivedBodies.isNotEmpty())
-      assertTrue(receivedBodies.first().contains("\"event\":\"app_open\""))
-      assertTrue(receivedBodies.first().contains("\"device_id\":"))
-
-      assertNull(memberRepo.reportFirstLaunchUsageIfNeeded())
-
-      val storedNet = splitRepo.getNetworkById(nId)!!
-      val storedSrv = splitRepo.getServerById(sId)!!
-      val combined = EffectiveConnectionCombiner.combine(storedNet, storedSrv)
-      viewModel.startCombinedVpnAfterConsent(storedNet, storedSrv, combined)
-
-      assertEquals("VPN connect must proceed immediately without waiting on webhook", 1, vpnController.startCount)
-
-      val deadlineConnect = System.currentTimeMillis() + 3_000L
-      while (receivedBodies.size < 2 && System.currentTimeMillis() < deadlineConnect) {
-        Thread.sleep(25L)
-      }
-      assertTrue(receivedBodies.any { it.contains("\"event\":\"connect\"") && it.contains("\"server_name\":\"Tokyo 01\"") })
-
-      val deadlineDb = System.currentTimeMillis() + 3_000L
-      while ((splitRepo.getServerById(sId)?.lifetimeUsers == null || memberRepo.totalAppUsersFlow.first() != 6012) &&
-        System.currentTimeMillis() < deadlineDb
-      ) {
-        Thread.sleep(25L)
-      }
-      assertEquals(6012, memberRepo.totalAppUsersFlow.first())
-      assertEquals(891, splitRepo.getServerById(sId)?.lifetimeUsers)
     } finally {
       webhook.stop()
     }
@@ -735,28 +745,38 @@ class ConsolidatedFixBatchM20Test {
             File(context.cacheDir, "m20_nav_redeem_${UUID.randomUUID()}.preferences_pb")
           },
       )
+    val viewModelStore = ViewModelStore()
     val viewModel =
-      AmktViewModel(
-        repository = legacyRepo,
-        membershipRepository = memberRepo,
-        vpnPreferencesRepository = VpnPreferencesRepository(context),
-        vpnController = RecordingVpnController(),
-        configCodec = ConfigFileCodec(),
-        logStore = AppLogStore(),
-        networkServerRepository = splitRepo,
-        redeemRepository = redeemRepo,
-      )
+      ViewModelProvider(
+        viewModelStore,
+        AmktViewModel.Factory(
+          repository = legacyRepo,
+          membershipRepository = memberRepo,
+          vpnPreferencesRepository = VpnPreferencesRepository(context),
+          vpnController = RecordingVpnController(),
+          configCodec = ConfigFileCodec(),
+          logStore = AppLogStore(),
+          networkServerRepository = splitRepo,
+          redeemRepository = redeemRepo,
+        ),
+      )[AmktViewModel::class.java]
 
-    composeRule.setContent {
-      MyApplicationTheme(darkTheme = true) {
-        AmktInjectorApp(viewModel = viewModel)
+    try {
+      composeRule.setContent {
+        MyApplicationTheme(darkTheme = true) {
+          AmktInjectorApp(viewModel = viewModel)
+        }
       }
+      composeRule.waitForIdle()
+      composeRule.onNodeWithTag("nav_home").assertIsDisplayed()
+      composeRule.onNodeWithTag("nav_networks").assertIsDisplayed()
+      composeRule.onNodeWithTag("nav_profiles").assertIsDisplayed()
+      composeRule.onNodeWithTag("nav_update").assertIsDisplayed()
+    } finally {
+      composeRule.waitForIdle()
+      viewModelStore.clear()
+      Shadows.shadowOf(Looper.getMainLooper()).idle()
     }
-    composeRule.waitForIdle()
-    composeRule.onNodeWithTag("nav_home").assertIsDisplayed()
-    composeRule.onNodeWithTag("nav_networks").assertIsDisplayed()
-    composeRule.onNodeWithTag("nav_profiles").assertIsDisplayed()
-    composeRule.onNodeWithTag("nav_update").assertIsDisplayed()
   }
 
   private class RecordingVpnController : VpnEngineController {

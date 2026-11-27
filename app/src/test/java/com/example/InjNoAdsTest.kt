@@ -272,7 +272,10 @@ class InjNoAdsTest {
       assertNoAdsterraAdsAnywhereInTree()
       assertHomeOwnerBannerVisible()
 
-      composeRule.onNodeWithTag("home_settings_button").performClick()
+      composeRule
+        .onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex))
+        .performScrollToNode(hasTestTag("home_settings_button"))
+      composeRule.onNodeWithTag("home_settings_button").performScrollTo().performClick()
       composeRule.waitForIdle()
       assertNoAdsterraAdsAnywhereInTree()
       assertNoOwnerBannerOnScreen()
